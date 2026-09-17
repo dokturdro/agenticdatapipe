@@ -14,6 +14,16 @@ x-pipeline-environment: &pipeline-environment
   BIKE_FEATURES_TABLE: ${BIKE_FEATURES_TABLE:-delta/station_features}
   BIKE_RAW_PREFIX: ${BIKE_RAW_PREFIX:-raw/gbfs}
   BIKE_AUDIT_PREFIX: ${BIKE_AUDIT_PREFIX:-audit/runs}
+  BIKE_FEAST_REPO_PATH: /opt/airflow/project/feature_repo
+  BIKE_FEAST_HISTORY_PATH: /opt/airflow/data/feast/station_features_history.parquet
+  BIKE_FEAST_REGISTRY_PATH: /opt/airflow/data/feast/registry.db
+  BIKE_FEAST_REDIS_CONNECTION: redis:6379
+  BIKE_MLFLOW_TRACKING_URI: http://mlflow:5000
+  BIKE_MLFLOW_EXPERIMENT: ${BIKE_MLFLOW_EXPERIMENT:-bike-availability-training}
+  BIKE_MLFLOW_MODEL_NAME: ${BIKE_MLFLOW_MODEL_NAME:-bike-availability-15m}
+  BIKE_SYNTHETIC_HISTORY_DAYS: ${BIKE_SYNTHETIC_HISTORY_DAYS:-30}
+  BIKE_SYNTHETIC_STATION_COUNT: ${BIKE_SYNTHETIC_STATION_COUNT:-8}
+  BIKE_SYNTHETIC_SEED: ${BIKE_SYNTHETIC_SEED:-42}
   BIKE_OPENAI_MODEL: ${BIKE_OPENAI_MODEL:-gpt-4.1-mini}
   BIKE_FIXTURE_MODE: ${BIKE_FIXTURE_MODE:-false}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -39,6 +49,7 @@ x-airflow-common: &airflow-common
     - ./airflow/logs:/opt/airflow/logs
     - ./data:/opt/airflow/data
     - ./src:/opt/airflow/project/src:ro
+    - ./feature_repo:/opt/airflow/project/feature_repo:ro
   depends_on:
     postgres:
       condition: service_healthy
@@ -46,6 +57,10 @@ x-airflow-common: &airflow-common
       condition: service_healthy
     minio-init:
       condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+    mlflow:
+      condition: service_healthy
 
 services:
   kafka:
@@ -118,6 +133,58 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: docker/mlflow/Dockerfile
+    command:
+      - mlflow
+      - server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+      - --backend-store-uri
+      - sqlite:////mlflow/mlflow.db
+      - --artifacts-destination
+      - s3://${BIKE_S3_BUCKET:-bike-lake}/mlflow-artifacts
+      - --allowed-hosts
+      - "*"
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${BIKE_S3_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${BIKE_S3_SECRET_ACCESS_KEY:-minioadmin}
+      AWS_DEFAULT_REGION: ${BIKE_S3_REGION:-us-east-1}
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data/mlflow:/mlflow
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+
   airflow-init:
     <<: *airflow-common
     command: ["bash", "-c", "mkdir -p /opt/airflow/data/airflow && airflow version"]
@@ -176,3 +243,4 @@ volumes:
   kafka-data:
   minio-data:
   postgres-data:
+  redis-data:

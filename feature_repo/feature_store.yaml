@@ -1,0 +1,9 @@
+project: bike_availability
+provider: local
+registry: ${BIKE_FEAST_REGISTRY_PATH}
+offline_store:
+  type: file
+online_store:
+  type: redis
+  connection_string: ${BIKE_FEAST_REDIS_CONNECTION}
+entity_key_serialization_version: 3

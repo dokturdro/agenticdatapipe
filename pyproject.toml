@@ -12,11 +12,14 @@ dependencies = [
     "langchain>=1,<2",
     "langchain-openai>=1,<2",
     "langgraph>=1,<2",
+    "feast[redis]>=0.60,<1",
+    "mlflow>=3,<4",
     "pandas>=2.2,<3",
     "pandas-stubs~=2.3.3",
     "pyarrow>=19,<24",
     "pydantic-settings>=2.8,<3",
-    "tenacity>=9,<10",
+    "scikit-learn>=1.6,<2",
+    "tenacity>=8.2,<9",
 ]
 
 [dependency-groups]
@@ -34,6 +37,7 @@ testpaths = ["tests"]
 markers = [
     "integration: requires a running Kafka broker",
     "minio: requires a running MinIO service",
+    "mlops: requires the local Feast, Redis, and MLflow stack",
 ]
 
 [tool.ruff]

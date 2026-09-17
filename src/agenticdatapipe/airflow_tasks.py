@@ -47,3 +47,24 @@ def process_station_batch() -> dict[str, Any]:
     """Run one bounded LangGraph batch for an Airflow task."""
     settings = Settings()
     return run_batch(settings, fixture=settings.fixture_mode)
+
+
+def prepare_training_history() -> dict[str, Any]:
+    """Generate the explicit synthetic history used by the Stage 3 demo."""
+    from agenticdatapipe.training import generate_synthetic_history
+
+    return generate_synthetic_history(Settings())
+
+
+def materialize_training_features() -> dict[str, Any]:
+    """Apply the Feast repository and populate its Redis online store."""
+    from agenticdatapipe.training import apply_and_materialize_features
+
+    return apply_and_materialize_features(Settings())
+
+
+def train_registered_model() -> dict[str, Any]:
+    """Train, register, and conditionally promote the availability model."""
+    from agenticdatapipe.training import train_and_register_model
+
+    return train_and_register_model(Settings())

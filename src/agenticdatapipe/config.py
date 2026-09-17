@@ -36,6 +36,16 @@ class Settings(BaseSettings):
     features_table: str = "delta/station_features"
     raw_prefix: str = "raw/gbfs"
     audit_prefix: str = "audit/runs"
+    feast_repo_path: Path = Path("feature_repo")
+    feast_history_path: Path = Path("data/feast/station_features_history.parquet")
+    feast_registry_path: Path = Path("data/feast/registry.db")
+    feast_redis_connection: str = "localhost:6379"
+    mlflow_tracking_uri: str = "http://localhost:5000"
+    mlflow_experiment: str = "bike-availability-training"
+    mlflow_model_name: str = "bike-availability-15m"
+    synthetic_history_days: int = Field(default=30, ge=7)
+    synthetic_station_count: int = Field(default=8, ge=2)
+    synthetic_seed: int = 42
 
     def s3_uri(self, key: str) -> str:
         return f"s3://{self.s3_bucket}/{key.lstrip('/')}"

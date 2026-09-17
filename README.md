@@ -1,9 +1,10 @@
 # Citi Bike agentic data and MLOps pipeline
 
-This repository is a local-first, incremental MLOps example. The current two stages stream
+This repository is a local-first, incremental MLOps example. Its first two stages stream
 Citi Bike GBFS 2.3 observations through Kafka, run a stateful LangGraph pipeline under
 Airflow, and store validated observations and features as Delta Lake tables in MinIO.
 OpenAI produces structured transformation plans from the current batch profile and validation results.
+Stage 3 adds Feast feature materialization and an MLflow training and registry workflow.
 
 ```mermaid
 flowchart LR
@@ -15,10 +16,15 @@ flowchart LR
     Graph -->|repair up to twice| Graph
     Graph --> Delta[(Delta Lake on MinIO)]
     Graph --> Audit[Reports and quarantine]
+    History[Synthetic 15-minute history] --> Feast[Feast offline features]
+    Feast --> Training[Airflow training DAG]
+    Training --> Registry[MLflow registry]
+    Feast --> Redis[(Redis online features)]
+    Registry --> Artifacts[(MinIO artifacts)]
 ```
 
-The eventual model will predict available bikes 15 minutes ahead. Training, Feast, MLflow,
-FastAPI serving, and statistical drift monitoring are later stages.
+The model predicts available bikes 15 minutes ahead. FastAPI serving and statistical drift
+monitoring remain later stages.
 
 ## Components
 
@@ -30,6 +36,9 @@ FastAPI serving, and statistical drift monitoring are later stages.
 - Deterministic tools perform transformations; the model cannot execute generated code.
 - MinIO stores raw snapshots, Delta tables, quarantine records, and run reports.
 - PostgreSQL stores Airflow metadata. `LocalExecutor` keeps the local stack small.
+- Feast performs point-in-time joins from Parquet and materializes current features to Redis.
+- MLflow tracks experiments, stores artifacts in MinIO, and manages `candidate` and
+  `champion` model aliases.
 
 ## Local Python setup
 
@@ -84,7 +93,8 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Airflow is at http://localhost:8080 and the MinIO console is at http://localhost:9001.
+Airflow is at http://localhost:8080, MLflow is at http://localhost:5000, and the MinIO
+console is at http://localhost:9001.
 The Airflow user is `admin`; its generated password is stored in:
 
 ```powershell
@@ -123,6 +133,43 @@ docker compose --profile live stop bike-producer
 ```
 
 Inspect Airflow task logs in the UI or with `docker compose logs airflow-scheduler`.
+
+## Train and register the Stage 3 model
+
+The training path is intentionally separate from the ingestion launcher. Trigger its manual
+Airflow DAG after the Compose stack is healthy:
+
+```powershell
+docker compose exec airflow-scheduler airflow dags trigger bike_model_training
+```
+
+The DAG performs three bounded tasks:
+
+1. It writes 30 days of explicitly synthetic, seeded, eight-station history at 15-minute
+   intervals to `data/feast/station_features_history.parquet`.
+2. It applies the definitions in `feature_repo`, materializes the latest feature values
+   into Redis, and verifies an online lookup.
+3. It retrieves point-in-time training features through Feast, uses chronological
+   70%/15%/15% train/validation/test windows, and trains a histogram gradient boosting
+   regressor.
+
+The persistence baseline predicts that the bike count in 15 minutes equals the current count.
+Every successful run is registered as `bike-availability-15m@candidate`. A version becomes
+`@champion` only when its validation MAE is strictly lower than that baseline.
+
+Follow the run in Airflow, then open MLflow at http://localhost:5000 to inspect parameters,
+metrics, the training summary, artifacts, model versions, and aliases. A compact local report
+is also written to `data/training/<mlflow-run-id>.json`.
+
+To verify Redis directly:
+
+```powershell
+docker compose exec redis redis-cli DBSIZE
+```
+
+Synthetic history is demo training input and is never written into the collected GBFS raw or
+Delta observation tables. The Feast source can later be replaced by an event-time export from
+the Delta feature table without changing the model-facing feature names.
 
 ## Inspect MinIO and Delta Lake
 
@@ -169,7 +216,7 @@ uv run pytest -q
 uv run ruff check .
 ```
 
-With Kafka and MinIO running, execute the opt-in stack test:
+With Kafka and MinIO running, execute the opt-in ingestion stack test:
 
 ```powershell
 $env:BIKE_TEST_STACK = '1'
@@ -183,10 +230,15 @@ Validate Airflow DAG imports inside its actual image:
 docker compose exec airflow-scheduler airflow dags list-import-errors
 ```
 
+After triggering Stage 3, its concrete integration checks are visible in the task logs:
+the Feast materialization task returns a non-null online feature sample, and the training task
+returns the MLflow run ID, model version, metrics, and promotion decision.
+
 ## Configuration
 
 All application settings use the `BIKE_` prefix and are listed in `.env.example`. Host
-defaults use `localhost`; Compose overrides Kafka and MinIO endpoints with service names.
+defaults use `localhost`; Compose overrides Kafka, MinIO, Redis, Feast paths, and MLflow
+endpoints with container paths and service names.
 The Airflow image contains the application, while DAGs, logs, and the local recovery directory
 are mounted from the repository.
 
@@ -204,8 +256,8 @@ recovery state. Do not reuse a pending manifest after resetting Kafka.
 
 ## Next stages
 
-1. Feast online/offline feature materialization, time-based training, and MLflow registry.
-2. FastAPI approved-model inference, quality/drift monitoring, and Kafka prediction events.
+1. FastAPI approved-model inference using Feast online features.
+2. Quality/drift monitoring and Kafka prediction audit events.
 
 Citi Bike discovery feed: https://gbfs.citibikenyc.com/gbfs/2.3/gbfs.json  
 GBFS reference: https://gbfs.org/documentation/reference/  
