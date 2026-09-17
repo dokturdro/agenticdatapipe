@@ -1,0 +1,41 @@
+[project]
+name = "agenticdatapipe"
+version = "0.1.0"
+description = "Local bike-sharing streaming and agentic data pipeline"
+requires-python = ">=3.11"
+dependencies = [
+    "boto3>=1.40,<2",
+    "confluent-kafka>=2.8,<3",
+    "deltalake>=1.2,<2",
+    "duckdb>=1.2,<2",
+    "httpx>=0.28,<1",
+    "langchain>=1,<2",
+    "langchain-openai>=1,<2",
+    "langgraph>=1,<2",
+    "pandas>=2.2,<3",
+    "pandas-stubs~=2.3.3",
+    "pyarrow>=19,<24",
+    "pydantic-settings>=2.8,<3",
+    "tenacity>=9,<10",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+
+[project.scripts]
+bikepipe = "agenticdatapipe.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: requires a running Kafka broker",
+    "minio: requires a running MinIO service",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
