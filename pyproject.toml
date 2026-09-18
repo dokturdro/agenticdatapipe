@@ -13,6 +13,7 @@ dependencies = [
     "langchain-openai>=1,<2",
     "langgraph>=1,<2",
     "feast[redis]>=0.60,<1",
+    "fastapi>=0.115,<1",
     "mlflow>=3,<4",
     "pandas>=2.2,<3",
     "pandas-stubs~=2.3.3",
@@ -20,6 +21,7 @@ dependencies = [
     "pydantic-settings>=2.8,<3",
     "scikit-learn>=1.6,<2",
     "tenacity>=8.2,<9",
+    "uvicorn[standard]>=0.34,<1",
 ]
 
 [dependency-groups]

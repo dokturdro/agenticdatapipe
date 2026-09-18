@@ -21,6 +21,8 @@ x-pipeline-environment: &pipeline-environment
   BIKE_MLFLOW_TRACKING_URI: http://mlflow:5000
   BIKE_MLFLOW_EXPERIMENT: ${BIKE_MLFLOW_EXPERIMENT:-bike-availability-training}
   BIKE_MLFLOW_MODEL_NAME: ${BIKE_MLFLOW_MODEL_NAME:-bike-availability-15m}
+  BIKE_MLFLOW_MODEL_ALIAS: ${BIKE_MLFLOW_MODEL_ALIAS:-champion}
+  BIKE_FEAST_FEATURE_SERVICE: ${BIKE_FEAST_FEATURE_SERVICE:-bike_availability_service}
   BIKE_SYNTHETIC_HISTORY_DAYS: ${BIKE_SYNTHETIC_HISTORY_DAYS:-30}
   BIKE_SYNTHETIC_STATION_COUNT: ${BIKE_SYNTHETIC_STATION_COUNT:-8}
   BIKE_SYNTHETIC_SEED: ${BIKE_SYNTHETIC_SEED:-42}
@@ -183,6 +185,37 @@ services:
       interval: 10s
       timeout: 5s
       retries: 18
+      start_period: 20s
+
+  bike-api:
+    profiles: ["serving"]
+    build:
+      context: .
+      dockerfile: docker/serving/Dockerfile
+    environment:
+      <<: *pipeline-environment
+      BIKE_DATA_DIR: /app/data
+      BIKE_FEAST_REPO_PATH: /app/feature_repo
+      BIKE_FEAST_HISTORY_PATH: /app/data/feast/station_features_history.parquet
+      BIKE_FEAST_REGISTRY_PATH: /app/data/feast/registry.db
+    ports:
+      - "${BIKE_API_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 10s
+      timeout: 5s
+      retries: 12
       start_period: 20s
 
   airflow-init:

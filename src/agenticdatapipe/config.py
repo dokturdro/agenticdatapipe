@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     mlflow_tracking_uri: str = "http://localhost:5000"
     mlflow_experiment: str = "bike-availability-training"
     mlflow_model_name: str = "bike-availability-15m"
+    mlflow_model_alias: str = "champion"
+    feast_feature_service: str = "bike_availability_service"
+    api_port: int = Field(default=8000, ge=1, le=65535)
     synthetic_history_days: int = Field(default=30, ge=7)
     synthetic_station_count: int = Field(default=8, ge=2)
     synthetic_seed: int = 42

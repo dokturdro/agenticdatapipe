@@ -5,6 +5,7 @@ Citi Bike GBFS 2.3 observations through Kafka, run a stateful LangGraph pipeline
 Airflow, and store validated observations and features as Delta Lake tables in MinIO.
 OpenAI produces structured transformation plans from the current batch profile and validation results.
 Stage 3 adds Feast feature materialization and an MLflow training and registry workflow.
+Stage 4 serves the approved model through FastAPI using Feast online features.
 
 ```mermaid
 flowchart LR
@@ -21,10 +22,14 @@ flowchart LR
     Training --> Registry[MLflow registry]
     Feast --> Redis[(Redis online features)]
     Registry --> Artifacts[(MinIO artifacts)]
+    Client[Client application] --> API[FastAPI serving]
+    API --> Redis
+    API --> Registry
+    API --> Client
 ```
 
-The model predicts available bikes 15 minutes ahead. FastAPI serving and statistical drift
-monitoring remain later stages.
+The model predicts available bikes 15 minutes ahead. Statistical drift monitoring remains a
+later stage.
 
 ## Components
 
@@ -39,6 +44,7 @@ monitoring remain later stages.
 - Feast performs point-in-time joins from Parquet and materializes current features to Redis.
 - MLflow tracks experiments, stores artifacts in MinIO, and manages `candidate` and
   `champion` model aliases.
+- FastAPI loads the MLflow champion and retrieves inference features from Feast/Redis.
 
 ## Local Python setup
 
@@ -171,6 +177,30 @@ Synthetic history is demo training input and is never written into the collected
 Delta observation tables. The Feast source can later be replaced by an event-time export from
 the Delta feature table without changing the model-facing feature names.
 
+## Serve predictions with FastAPI
+
+Train and promote a champion model first, then start the optional serving profile:
+
+```powershell
+docker compose --profile serving up --build -d bike-api
+curl.exe http://localhost:8000/health
+```
+
+The API loads `models:/bike-availability-15m@champion` once when it starts. Restart
+`bike-api` after promoting a new champion.
+
+Request a prediction using only a station ID. The service obtains all model inputs from the
+Feast online store:
+
+```powershell
+$body = @{ station_id = 'demo-station-001' } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri 'http://localhost:8000/predict' -ContentType 'application/json' -Body $body
+```
+
+The response includes the raw model output, a rounded prediction bounded between zero and
+station capacity, the current bike count, the 15-minute horizon, and the loaded model version.
+Interactive OpenAPI documentation is available at http://localhost:8000/docs.
+
 ## Inspect MinIO and Delta Lake
 
 The host CLI defaults to local storage so `demo` stays self-contained. Temporarily select
@@ -256,8 +286,8 @@ recovery state. Do not reuse a pending manifest after resetting Kafka.
 
 ## Next stages
 
-1. FastAPI approved-model inference using Feast online features.
-2. Quality/drift monitoring and Kafka prediction audit events.
+1. Quality/drift monitoring.
+2. Kafka prediction audit events.
 
 Citi Bike discovery feed: https://gbfs.citibikenyc.com/gbfs/2.3/gbfs.json  
 GBFS reference: https://gbfs.org/documentation/reference/  

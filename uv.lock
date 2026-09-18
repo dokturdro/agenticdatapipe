@@ -17,6 +17,7 @@ dependencies = [
     { name = "confluent-kafka" },
     { name = "deltalake" },
     { name = "duckdb" },
+    { name = "fastapi" },
     { name = "feast", extra = ["redis"] },
     { name = "httpx" },
     { name = "langchain" },
@@ -29,6 +30,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "scikit-learn" },
     { name = "tenacity" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.dev-dependencies]
@@ -43,6 +45,7 @@ requires-dist = [
     { name = "confluent-kafka", specifier = ">=2.8,<3" },
     { name = "deltalake", specifier = ">=1.2,<2" },
     { name = "duckdb", specifier = ">=1.2,<2" },
+    { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "feast", extras = ["redis"], specifier = ">=0.60,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "langchain", specifier = ">=1,<2" },
@@ -55,6 +58,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.8,<3" },
     { name = "scikit-learn", specifier = ">=1.6,<2" },
     { name = "tenacity", specifier = ">=8.2,<9" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<1" },
 ]
 
 [package.metadata.requires-dev]
