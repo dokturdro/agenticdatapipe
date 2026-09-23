@@ -26,21 +26,11 @@ class Observation(BaseModel):
     lon: float = Field(ge=-180, le=180)
 
 
-Operation = Literal[
-    "normalize", "deduplicate", "join_metadata", "filter_operational", "derive_features"
-]
-REQUIRED_OPERATIONS: list[Operation] = [
-    "normalize",
-    "deduplicate",
-    "join_metadata",
-    "filter_operational",
-    "derive_features",
-]
-
-
 class TransformPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    operations: list[Operation]
+
+    allow_bikes_available_alias: bool
+    freshness_grace_seconds: Literal[0, 900]
     rationale: str
 
 
@@ -50,6 +40,11 @@ class Profile(BaseModel):
     missing_fields: dict[str, int]
     timestamp_min: int | None = None
     timestamp_max: int | None = None
+    alias_candidates: int = 0
+    within_freshness_limit: int = 0
+    within_freshness_grace: int = 0
+    too_old: int = 0
+    future_timestamps: int = 0
 
 
 class QualityReport(BaseModel):
@@ -57,6 +52,8 @@ class QualityReport(BaseModel):
     accepted_rows: int
     quarantined_rows: int
     duplicate_rows: int
+    alias_recovered_rows: int = 0
+    grace_accepted_rows: int = 0
     issues: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     repairable: bool = False

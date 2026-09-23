@@ -9,16 +9,31 @@ import pytest
 from pydantic import ValidationError
 
 from agenticdatapipe.config import Settings
-from agenticdatapipe.contracts import REQUIRED_OPERATIONS, Batch, TransformPlan
+from agenticdatapipe.contracts import Batch, TransformPlan
 from agenticdatapipe.graph import build_graph
 from agenticdatapipe.ingestion import snapshot_events
-from agenticdatapipe.operations import execute_plan
+from agenticdatapipe.operations import execute_plan, profile_records
 
 
 @pytest.fixture
 def records():
     return snapshot_events(
         json.loads(Path("fixtures/stations.json").read_text(encoding="utf-8-sig"))
+    )
+
+
+@pytest.fixture
+def varied_records():
+    return snapshot_events(
+        json.loads(Path("fixtures/stations_variation.json").read_text(encoding="utf-8"))
+    )
+
+
+def plan(alias=False, grace=0):
+    return TransformPlan(
+        allow_bikes_available_alias=alias,
+        freshness_grace_seconds=grace,
+        rationale="test",
     )
 
 
@@ -30,6 +45,8 @@ def test_graph_outputs(tmp_path, records):
     assert report["quality"]["accepted_rows"] == 1
     assert report["quality"]["quarantined_rows"] == 1
     assert report["quality"]["duplicate_rows"] == 1
+    assert report["quality"]["alias_recovered_rows"] == 0
+    assert report["quality"]["grace_accepted_rows"] == 0
     assert "retrieved_docs" not in report
     output = tmp_path / "batches/example"
     assert pd.read_parquet(output / "features.parquet").iloc[0].available_bikes == 12
@@ -52,8 +69,9 @@ def test_invalid_records(records, change):
     result = execute_plan.invoke(
         {
             "records": [record],
-            "plan": {"operations": REQUIRED_OPERATIONS, "rationale": "test"},
+            "plan": plan().model_dump(),
             "stale_seconds": 900,
+            "profile": profile_records.invoke({"records": [record], "stale_seconds": 900}),
         }
     )
     assert not result["accepted"]
@@ -62,11 +80,104 @@ def test_invalid_records(records, change):
 
 def test_unsupported_plan():
     with pytest.raises(ValidationError):
-        TransformPlan(operations=["execute_python"], rationale="bad")
+        TransformPlan(
+            allow_bikes_available_alias=False,
+            freshness_grace_seconds=3600,
+            rationale="bad",
+        )
+
+
+def test_variation_fixture_exercises_both_choices(tmp_path, varied_records):
+    report = build_graph(Settings(data_dir=tmp_path), fixture=True).invoke(
+        {"batch": Batch(batch_id="variation", records=varied_records).model_dump()}
+    )["report"]
+    assert report["plan"]["allow_bikes_available_alias"] is True
+    assert report["plan"]["freshness_grace_seconds"] == 900
+    assert report["profile"]["alias_candidates"] == 1
+    assert report["profile"]["within_freshness_grace"] == 1
+    assert report["quality"]["accepted_rows"] == 2
+    assert report["quality"]["quarantined_rows"] == 1
+    assert report["quality"]["alias_recovered_rows"] == 1
+    assert report["quality"]["grace_accepted_rows"] == 1
+    rows = pd.read_parquet(tmp_path / "batches/variation/observations.parquet")
+    assert rows.loc[rows.station_id == "demo-2", "num_bikes_available"].item() == 7
+
+
+def test_choices_change_results(varied_records):
+    profile = profile_records.invoke({"records": varied_records, "stale_seconds": 900})
+
+    def run(alias, grace):
+        return execute_plan.invoke(
+            {
+                "records": varied_records,
+                "plan": plan(alias, grace).model_dump(),
+                "stale_seconds": 900,
+                "profile": profile,
+            }
+        )
+
+    assert len(run(False, 0)["accepted"]) == 1
+    assert len(run(True, 0)["accepted"]) == 1
+    assert len(run(False, 900)["accepted"]) == 1
+    assert len(run(True, 900)["accepted"]) == 2
+
+
+def test_grace_never_accepts_older_or_future_rows(records):
+    too_old = copy.deepcopy(records[0])
+    too_old["status"]["last_reported"] -= 1801
+    future = copy.deepcopy(records[0])
+    future["status"]["last_reported"] += 71
+    batch = [too_old, future, records[0]]
+    profile = profile_records.invoke({"records": batch, "stale_seconds": 900})
+    result = execute_plan.invoke(
+        {
+            "records": batch,
+            "plan": plan(grace=900).model_dump(),
+            "stale_seconds": 900,
+            "profile": profile,
+        }
+    )
+    assert result["issues"]  # No grace candidates: the planner must repair this choice.
+
+    batch = [too_old, future, records[0], copy.deepcopy(records[0])]
+    batch[-1]["status"]["last_reported"] -= 1200
+    batch[-1]["event_id"] = "grace-record"
+    profile = profile_records.invoke({"records": batch, "stale_seconds": 900})
+    result = execute_plan.invoke(
+        {
+            "records": batch,
+            "plan": plan(grace=900).model_dump(),
+            "stale_seconds": 900,
+            "profile": profile,
+        }
+    )
+    assert len(result["accepted"]) == 2
+    assert len(result["quarantine"]) == 2
+
+
+def test_alias_never_overrides_canonical(records):
+    record = copy.deepcopy(records[0])
+    record["status"]["bikes_available"] = 99
+    alias_only = copy.deepcopy(records[0])
+    alias_only["event_id"] = "alias-only"
+    del alias_only["status"]["num_bikes_available"]
+    alias_only["status"]["bikes_available"] = 7
+    profile = profile_records.invoke({"records": [record, alias_only], "stale_seconds": 900})
+    result = execute_plan.invoke(
+        {
+            "records": [record, alias_only],
+            "plan": plan(alias=True).model_dump(),
+            "stale_seconds": 900,
+            "profile": profile,
+        }
+    )
+    assert result["accepted"][0]["num_bikes_available"] == 12
+    assert result["accepted"][1]["num_bikes_available"] == 7
+    assert result["alias_recovered"] == 1
 
 
 def test_repair_budget(tmp_path, records):
-    planner = Mock(return_value=TransformPlan(operations=[], rationale="incomplete"))
+    planner = Mock(return_value=plan(alias=True))
     graph = build_graph(Settings(data_dir=tmp_path), True, planner)
     with pytest.raises(RuntimeError, match="Repair budget exhausted"):
         graph.invoke({"batch": Batch(batch_id="bad", records=records).model_dump()})
@@ -77,14 +188,28 @@ def test_repair_budget(tmp_path, records):
 def test_repair_success(tmp_path, records):
     planner = Mock(
         side_effect=[
-            TransformPlan(operations=[], rationale="incomplete"),
-            TransformPlan(operations=REQUIRED_OPERATIONS, rationale="fixed"),
+            plan(alias=True),
+            plan(),
         ]
     )
     report = build_graph(Settings(data_dir=tmp_path), True, planner).invoke(
         {"batch": Batch(batch_id="repair", records=records).model_dump()}
     )["report"]
     assert report["attempts"] == 2
+
+
+def test_mocked_openai_plan(monkeypatch, tmp_path, varied_records):
+    from agenticdatapipe import graph
+
+    model = Mock()
+    model.with_structured_output.return_value.invoke.return_value = plan(True, 900)
+    monkeypatch.setattr(graph, "ChatOpenAI", Mock(return_value=model))
+    report = graph.build_graph(Settings(data_dir=tmp_path)).invoke(
+        {"batch": Batch(batch_id="openai-plan", records=varied_records).model_dump()}
+    )["report"]
+    assert report["mode"] == "openai"
+    assert report["quality"]["alias_recovered_rows"] == 1
+    assert report["quality"]["grace_accepted_rows"] == 1
 
 
 def test_no_commit_after_failure(monkeypatch, tmp_path, records):

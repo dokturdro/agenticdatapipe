@@ -1,0 +1,26 @@
+{
+  "system_id": "citibike-nyc",
+  "ingested_at": 1788802920,
+  "station_information": {
+    "version": "2.3",
+    "data": {
+      "stations": [
+        {"station_id": "demo-1", "name": "Demo Station", "capacity": 30, "lat": 40.75, "lon": -73.99},
+        {"station_id": "demo-2", "name": "Alias Station", "capacity": 20, "lat": 40.76, "lon": -73.98},
+        {"station_id": "demo-3", "name": "Inactive Station", "capacity": 20, "lat": 40.77, "lon": -73.97}
+      ]
+    }
+  },
+  "station_status": {
+    "version": "2.3",
+    "last_updated": 1788802910,
+    "ttl": 60,
+    "data": {
+      "stations": [
+        {"station_id": "demo-1", "last_reported": 1788802900, "num_bikes_available": 12, "num_docks_available": 18, "is_installed": 1, "is_renting": 1, "is_returning": 1},
+        {"station_id": "demo-2", "last_reported": 1788801710, "bikes_available": 7, "num_docks_available": 13, "is_installed": 1, "is_renting": 1, "is_returning": 1},
+        {"station_id": "demo-3", "last_reported": 1788802900, "num_bikes_available": 0, "num_docks_available": 20, "is_installed": 0, "is_renting": 0, "is_returning": 0}
+      ]
+    }
+  }
+}

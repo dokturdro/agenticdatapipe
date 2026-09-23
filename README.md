@@ -3,7 +3,8 @@
 This repository is a local-first, incremental MLOps example. Its first two stages stream
 Citi Bike GBFS 2.3 observations through Kafka, run a stateful LangGraph pipeline under
 Airflow, and store validated observations and features as Delta Lake tables in MinIO.
-OpenAI produces structured transformation plans from the current batch profile and validation results.
+OpenAI chooses two bounded transformation policies from the batch profile: whether to
+recognize a known bike-count alias and whether to allow a 15-minute freshness grace period.
 Stage 3 adds Feast feature materialization and an MLflow training and registry workflow.
 Stage 4 serves the approved model through FastAPI using Feast online features.
 
@@ -14,7 +15,7 @@ flowchart LR
     Kafka --> Sensor[Airflow backlog sensor]
     Sensor --> Graph[LangGraph task]
     OpenAI --> Graph
-    Graph -->|repair up to twice| Graph
+    Graph -->|repair infeasible choice up to twice| Graph
     Graph --> Delta[(Delta Lake on MinIO)]
     Graph --> Audit[Reports and quarantine]
     History[Synthetic 15-minute history] --> Feast[Feast offline features]
@@ -37,8 +38,9 @@ later stage.
 - Airflow schedules one bounded batch each minute. Its rescheduling sensor checks Kafka
   watermarks and committed offsets without consuming messages.
 - LangGraph executes scout, profiler, planner, executor, validator, and persist
-  nodes. Invalid plans loop back to the planner at most twice.
-- Deterministic tools perform transformations; the model cannot execute generated code.
+  nodes. Infeasible policy choices loop back to the planner at most twice.
+- Deterministic tools apply the chosen policies; the model cannot execute generated code
+  or alter the fixed station validation rules.
 - MinIO stores raw snapshots, Delta tables, quarantine records, and run reports.
 - PostgreSQL stores Airflow metadata. `LocalExecutor` keeps the local stack small.
 - Feast performs point-in-time joins from Parquet and materializes current features to Redis.
@@ -66,6 +68,30 @@ uv run pytest -q
 ```
 
 It produces one valid station and quarantines one inactive station under `data/batches`.
+
+To see the policy choices change the data, use the intentionally altered snapshot:
+
+```powershell
+uv run bikepipe demo --snapshot fixtures/stations_variation.json
+```
+
+Its report shows `alias_candidates: 1` and `within_freshness_grace: 1`. The fixture planner
+enables the `bikes_available` alias and a 900-second grace period: two stations are accepted,
+one inactive station is quarantined, and both `alias_recovered_rows` and
+`grace_accepted_rows` equal 1. Canonical `num_bikes_available` always takes precedence.
+Observations older than the selected limit, future timestamps, and invalid measurements
+remain quarantined. This alias is synthetic demonstration input, not a Citi Bike feed change.
+
+For the same variation through Kafka, Airflow, OpenAI, and Delta Lake, run:
+
+```powershell
+uv run python main.py --snapshot fixtures/stations_variation.json
+```
+
+Add `--fixture` to make that full-stack run deterministic and API-free. The report records
+the profile, chosen policies, rationale, attempts, quality counts, and Delta locations.
+The model decides between predefined options; a conventional rule could make the same
+choices for this small example. The value here is the controlled integration pattern.
 
 ## Run the complete pipeline with one command
 
@@ -175,7 +201,8 @@ docker compose exec redis redis-cli DBSIZE
 
 Synthetic history is demo training input and is never written into the collected GBFS raw or
 Delta observation tables. The Feast source can later be replaced by an event-time export from
-the Delta feature table without changing the model-facing feature names.
+the Delta feature table without changing the model-facing feature names. The current training
+and serving demonstration uses synthetic history rather than the collected GBFS observations.
 
 ## Serve predictions with FastAPI
 
