@@ -1,0 +1,21 @@
+agenticdatapipe:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('BIKE_DBT_PATH', '../data/dbt/bike.duckdb') }}"
+      schema: main
+      threads: 2
+      settings:
+        TimeZone: UTC
+      extensions:
+        - delta
+        - httpfs
+      secrets:
+        - type: s3
+          key_id: "{{ env_var('BIKE_S3_ACCESS_KEY_ID', 'minioadmin') }}"
+          secret: "{{ env_var('BIKE_S3_SECRET_ACCESS_KEY', 'minioadmin') }}"
+          region: "{{ env_var('BIKE_S3_REGION', 'us-east-1') }}"
+          endpoint: "{{ env_var('BIKE_DUCKDB_S3_ENDPOINT', 'localhost:9000') }}"
+          url_style: path
+          use_ssl: false

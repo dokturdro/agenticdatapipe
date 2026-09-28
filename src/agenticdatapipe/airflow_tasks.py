@@ -50,10 +50,20 @@ def process_station_batch() -> dict[str, Any]:
 
 
 def prepare_training_history() -> dict[str, Any]:
-    """Generate the explicit synthetic history used by the Stage 3 demo."""
-    from agenticdatapipe.training import generate_synthetic_history
+    """Generate raw synthetic input when the configured training source needs it."""
+    from agenticdatapipe.training import generate_synthetic_observations
 
-    return generate_synthetic_history(Settings())
+    settings = Settings()
+    if settings.training_source == "collected":
+        return {"source": "collected", "status": "not_required"}
+    return generate_synthetic_observations(settings)
+
+
+def build_training_features() -> dict[str, Any]:
+    """Build and test feature history with dbt."""
+    from agenticdatapipe.dbt_runner import build_training_dataset
+
+    return build_training_dataset(Settings())
 
 
 def materialize_training_features() -> dict[str, Any]:

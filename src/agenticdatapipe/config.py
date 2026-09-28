@@ -33,9 +33,15 @@ class Settings(BaseSettings):
     s3_secret_access_key: str = "minioadmin"
     s3_allow_http: bool = True
     observations_table: str = "delta/station_observations"
-    features_table: str = "delta/station_features"
     raw_prefix: str = "raw/gbfs"
     audit_prefix: str = "audit/runs"
+    dbt_project_dir: Path = Path("dbt")
+    dbt_profiles_dir: Path = Path("dbt")
+    dbt_path: Path = Path("data/dbt/bike.duckdb")
+    dbt_target_path: Path = Path("data/dbt/target")
+    dbt_log_path: Path = Path("data/dbt/logs")
+    training_source: Literal["synthetic", "collected"] = "synthetic"
+    synthetic_raw_history_path: Path = Path("data/training/synthetic_observations.parquet")
     feast_repo_path: Path = Path("feature_repo")
     feast_history_path: Path = Path("data/feast/station_features_history.parquet")
     feast_registry_path: Path = Path("data/feast/registry.db")

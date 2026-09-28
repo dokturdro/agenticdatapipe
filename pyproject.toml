@@ -24,6 +24,9 @@ dependencies = [
     "uvicorn[standard]>=0.34,<1",
 ]
 
+[project.optional-dependencies]
+dbt = ["dbt-duckdb>=1.10,<2"]
+
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 

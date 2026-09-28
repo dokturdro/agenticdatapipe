@@ -11,9 +11,16 @@ x-pipeline-environment: &pipeline-environment
   BIKE_S3_SECRET_ACCESS_KEY: ${BIKE_S3_SECRET_ACCESS_KEY:-minioadmin}
   BIKE_S3_ALLOW_HTTP: "true"
   BIKE_OBSERVATIONS_TABLE: ${BIKE_OBSERVATIONS_TABLE:-delta/station_observations}
-  BIKE_FEATURES_TABLE: ${BIKE_FEATURES_TABLE:-delta/station_features}
   BIKE_RAW_PREFIX: ${BIKE_RAW_PREFIX:-raw/gbfs}
   BIKE_AUDIT_PREFIX: ${BIKE_AUDIT_PREFIX:-audit/runs}
+  BIKE_DBT_PROJECT_DIR: /opt/airflow/project/dbt
+  BIKE_DBT_PROFILES_DIR: /opt/airflow/project/dbt
+  BIKE_DBT_PATH: /opt/airflow/data/dbt/bike.duckdb
+  BIKE_DBT_TARGET_PATH: /opt/airflow/data/dbt/target
+  BIKE_DBT_LOG_PATH: /opt/airflow/data/dbt/logs
+  BIKE_TRAINING_SOURCE: ${BIKE_TRAINING_SOURCE:-synthetic}
+  BIKE_SYNTHETIC_RAW_HISTORY_PATH: /opt/airflow/data/training/synthetic_observations.parquet
+  BIKE_DUCKDB_S3_ENDPOINT: minio:9000
   BIKE_FEAST_REPO_PATH: /opt/airflow/project/feature_repo
   BIKE_FEAST_HISTORY_PATH: /opt/airflow/data/feast/station_features_history.parquet
   BIKE_FEAST_REGISTRY_PATH: /opt/airflow/data/feast/registry.db
@@ -51,6 +58,7 @@ x-airflow-common: &airflow-common
     - ./airflow/logs:/opt/airflow/logs
     - ./data:/opt/airflow/data
     - ./src:/opt/airflow/project/src:ro
+    - ./dbt:/opt/airflow/project/dbt:ro
     - ./feature_repo:/opt/airflow/project/feature_repo:ro
   depends_on:
     postgres:

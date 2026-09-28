@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: stg_training_observations
+    description: Canonical observations selected from synthetic Parquet or collected Delta data.
+    columns:
+      - name: station_id
+        data_tests: [not_null]
+      - name: event_timestamp
+        data_tests: [not_null]
+      - name: available_bikes
+        data_tests: [not_null]
+      - name: available_docks
+        data_tests: [not_null]
+      - name: capacity
+        data_tests: [not_null]
+
+  - name: station_features_history
+    description: Point-in-time station features and exact 15-minute training labels for Feast.
+    columns:
+      - name: station_id
+        data_tests: [not_null]
+      - name: event_timestamp
+        data_tests: [not_null]
+      - name: hour_utc
+        data_tests: [not_null]
+      - name: day_of_week
+        data_tests: [not_null]
+      - name: available_bikes
+        data_tests: [not_null]
+      - name: available_docks
+        data_tests: [not_null]
+      - name: capacity
+        data_tests: [not_null]
+      - name: availability_ratio
+        data_tests: [not_null]
+
+unit_tests:
+  - name: exact_fifteen_minute_labels
+    description: Labels only the next observation when it is exactly fifteen minutes later.
+    model: int_station_feature_history
+    given:
+      - input: ref('stg_training_observations')
+        rows:
+          - {station_id: one, event_timestamp: '2026-01-01 00:00:00+00', available_bikes: 5, available_docks: 5, capacity: 10, source_name: synthetic}
+          - {station_id: one, event_timestamp: '2026-01-01 00:15:00+00', available_bikes: 4, available_docks: 6, capacity: 10, source_name: synthetic}
+          - {station_id: one, event_timestamp: '2026-01-01 00:45:00+00', available_bikes: 3, available_docks: 7, capacity: 10, source_name: synthetic}
+    expect:
+      rows:
+        - {station_id: one, event_timestamp: '2026-01-01 00:00:00+00', hour_utc: 0, day_of_week: 3, available_bikes: 5, available_docks: 5, capacity: 10, availability_ratio: 0.5, target_available_bikes_15m: 4.0, source_name: synthetic}
+        - {station_id: one, event_timestamp: '2026-01-01 00:15:00+00', hour_utc: 0, day_of_week: 3, available_bikes: 4, available_docks: 6, capacity: 10, availability_ratio: 0.4, target_available_bikes_15m: null, source_name: synthetic}
+        - {station_id: one, event_timestamp: '2026-01-01 00:45:00+00', hour_utc: 0, day_of_week: 3, available_bikes: 3, available_docks: 7, capacity: 10, availability_ratio: 0.3, target_available_bikes_15m: null, source_name: synthetic}
