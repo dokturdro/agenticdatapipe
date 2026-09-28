@@ -27,16 +27,14 @@ def test_delta_upsert_is_idempotent_and_updates(tmp_path):
 
 def test_inspect_local_delta(tmp_path):
     observations = tmp_path / "observations"
-    features = tmp_path / "features"
     delta_upsert(str(observations), [{"event_id": "one", "value": 1}])
     settings = Settings(
         storage_backend="local",
         observations_table=str(observations),
-        features_table=str(features),
     )
     result = inspect_delta(settings)
     assert result["tables"]["observations"]["rows"] == 1
-    assert result["tables"]["features"]["status"] == "missing"
+    assert set(result["tables"]) == {"observations"}
 
 
 def test_delta_failure_does_not_create_completion_marker(monkeypatch, tmp_path):
@@ -46,7 +44,6 @@ def test_delta_failure_does_not_create_completion_marker(monkeypatch, tmp_path):
     settings = Settings(storage_backend="delta", data_dir=tmp_path)
     result = {
         "accepted": [],
-        "features": [],
         "quarantine": [],
         "quality": {},
         "profile": {},
@@ -118,7 +115,6 @@ def test_kafka_to_minio_delta_stack(tmp_path):
         kafka_topic=f"bike-stack-{suffix}",
         kafka_group_id=f"bike-stack-{suffix}",
         observations_table=f"tests/{suffix}/observations",
-        features_table=f"tests/{suffix}/features",
         audit_prefix=f"tests/{suffix}/audit",
         batch_size=2,
     )
@@ -133,4 +129,4 @@ def test_kafka_to_minio_delta_stack(tmp_path):
     assert report["storage"]["backend"] == "delta"
     assert retry_report["storage"]["backend"] == "delta"
     assert lake["tables"]["observations"]["rows"] == 1
-    assert lake["tables"]["features"]["rows"] == 1
+    assert set(lake["tables"]) == {"observations"}

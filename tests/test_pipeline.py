@@ -49,7 +49,8 @@ def test_graph_outputs(tmp_path, records):
     assert report["quality"]["grace_accepted_rows"] == 0
     assert "retrieved_docs" not in report
     output = tmp_path / "batches/example"
-    assert pd.read_parquet(output / "features.parquet").iloc[0].available_bikes == 12
+    assert pd.read_parquet(output / "observations.parquet").iloc[0].num_bikes_available == 12
+    assert not (output / "features.parquet").exists()
     assert graph.invoke({"batch": batch.model_dump()})["report"] == report
 
 

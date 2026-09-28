@@ -1,4 +1,4 @@
-"""Synthetic feature history, Feast materialization, and MLflow training."""
+"""Synthetic raw history, Feast materialization, and MLflow training."""
 
 from __future__ import annotations
 
@@ -33,10 +33,10 @@ FEATURE_COLUMNS = [
 TARGET_COLUMN = "target_available_bikes_15m"
 
 
-def generate_synthetic_history(
+def generate_synthetic_observations(
     settings: Settings, *, end_at: datetime | None = None
 ) -> dict[str, Any]:
-    """Write labeled, multi-station history for the local training demonstration."""
+    """Write raw, canonical observations for the local training demonstration."""
     end = (end_at or datetime.now(UTC)).astimezone(UTC)
     end = end.replace(minute=(end.minute // 15) * 15, second=0, microsecond=0)
     periods = settings.synthetic_history_days * 96 + 1
@@ -63,35 +63,29 @@ def generate_synthetic_history(
         frame = pd.DataFrame(
             {
                 "station_id": f"demo-station-{index + 1:03d}",
-                "event_timestamp": timestamps,
-                "hour_utc": timestamps.hour.astype("int64"),
-                "day_of_week": timestamps.dayofweek.astype("int64"),
-                "available_bikes": bikes,
+                "last_reported": timestamps.asi8 // 1_000_000_000,
+                "num_bikes_available": bikes,
                 "capacity": capacity,
             }
         )
-        frame["available_docks"] = frame["capacity"] - frame["available_bikes"]
-        frame["availability_ratio"] = frame["available_bikes"] / frame["capacity"]
-        frame[TARGET_COLUMN] = frame["available_bikes"].shift(-1)
+        frame["num_docks_available"] = frame["capacity"] - frame["num_bikes_available"]
         frames.append(frame)
 
     history = pd.concat(frames, ignore_index=True).sort_values(
-        ["event_timestamp", "station_id"], ignore_index=True
+        ["last_reported", "station_id"], ignore_index=True
     )
-    path = settings.feast_history_path
+    path = settings.synthetic_raw_history_path
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp.parquet")
     history.to_parquet(temporary, index=False)
     temporary.replace(path)
-    labeled_rows = int(history[TARGET_COLUMN].notna().sum())
     return {
         "path": str(path),
         "rows": len(history),
-        "labeled_rows": labeled_rows,
         "stations": settings.synthetic_station_count,
         "start": timestamps[0].isoformat(),
         "end": timestamps[-1].isoformat(),
-        "source": "synthetic",
+        "source": "synthetic_raw",
     }
 
 
@@ -230,7 +224,7 @@ def train_and_register_model(settings: Settings) -> dict[str, Any]:
         mlflow.log_metrics(metrics)
         mlflow.log_dict(
             {
-                "source": "synthetic",
+                "source": settings.training_source,
                 "history_path": str(settings.feast_history_path),
                 "promotion_gate": "validation_mae < baseline_validation_mae",
                 "promoted": promoted,

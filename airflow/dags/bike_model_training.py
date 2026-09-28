@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from airflow.sdk import dag, task
 
 from agenticdatapipe.airflow_tasks import (
+    build_training_features,
     materialize_training_features,
     prepare_training_history,
     train_registered_model,
@@ -21,10 +22,10 @@ from agenticdatapipe.airflow_tasks import (
         "retries": 1,
         "retry_delay": timedelta(seconds=30),
     },
-    tags=["bike-sharing", "feast", "mlflow", "training"],
+    tags=["bike-sharing", "dbt", "feast", "mlflow", "training"],
 )
 def bike_model_training():
-    @task(task_id="prepare_synthetic_history")
+    @task(task_id="prepare_training_source")
     def prepare() -> dict:
         return prepare_training_history()
 
@@ -32,14 +33,19 @@ def bike_model_training():
     def materialize() -> dict:
         return materialize_training_features()
 
+    @task(task_id="build_and_test_dbt_features")
+    def build_features() -> dict:
+        return build_training_features()
+
     @task(task_id="train_register_and_promote")
     def train() -> dict:
         return train_registered_model()
 
     prepared = prepare()
+    built = build_features()
     materialized = materialize()
     trained = train()
-    prepared >> materialized >> trained
+    prepared >> built >> materialized >> trained
 
 
 bike_model_training()

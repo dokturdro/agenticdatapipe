@@ -1,6 +1,5 @@
 """Deterministic data operations exposed to the graph as LangChain tools."""
 
-from datetime import UTC, datetime
 from typing import Any
 
 import duckdb
@@ -79,14 +78,13 @@ def execute_plan(
     if issues:
         return {
             "accepted": [],
-            "features": [],
             "quarantine": [],
             "duplicates": 0,
             "alias_recovered": 0,
             "grace_accepted": 0,
             "issues": issues,
         }
-    accepted, features, quarantine = [], [], []
+    accepted, quarantine = [], []
     seen: set[str] = set()
     duplicates = alias_recovered = grace_accepted = 0
     for original in records:
@@ -131,22 +129,8 @@ def execute_plan(
             if observation.event_id in seen:
                 duplicates += 1
                 continue
-            timestamp = datetime.fromtimestamp(observation.last_reported, UTC)
-            feature = {
-                "event_id": observation.event_id,
-                "system_id": observation.system_id,
-                "station_id": observation.station_id,
-                "event_timestamp": observation.last_reported,
-                "hour_utc": timestamp.hour,
-                "day_of_week": timestamp.weekday(),
-                "available_bikes": observation.num_bikes_available,
-                "available_docks": observation.num_docks_available,
-                "capacity": observation.capacity,
-                "availability_ratio": observation.num_bikes_available / observation.capacity,
-            }
             seen.add(observation.event_id)
             accepted.append(observation.model_dump())
-            features.append(feature)
             alias_recovered += int(used_alias)
             grace_accepted += int(age > stale_seconds)
         except (
@@ -160,7 +144,6 @@ def execute_plan(
             quarantine.append({"record": original, "reason": str(exc)})
     return {
         "accepted": accepted,
-        "features": features,
         "quarantine": quarantine,
         "duplicates": duplicates,
         "alias_recovered": alias_recovered,

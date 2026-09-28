@@ -129,10 +129,7 @@ def inspect_delta(settings: Settings) -> dict[str, Any]:
     """Return table versions and row counts."""
     output: dict[str, Any] = {"backend": settings.storage_backend, "tables": {}}
     options = settings.delta_storage_options() if settings.storage_backend == "delta" else None
-    for name, location in (
-        ("observations", settings.observations_table),
-        ("features", settings.features_table),
-    ):
+    for name, location in (("observations", settings.observations_table),):
         uri = settings.s3_uri(location) if settings.storage_backend == "delta" else location
         try:
             table = DeltaTable(uri, storage_options=options)
@@ -149,16 +146,12 @@ def inspect_delta(settings: Settings) -> dict[str, Any]:
 def _persist_delta(settings: Settings, batch: Batch, result: dict[str, Any]) -> dict[str, Any]:
     options = settings.delta_storage_options()
     observations_uri = settings.s3_uri(settings.observations_table)
-    features_uri = settings.s3_uri(settings.features_table)
     observation_rows = _enrich_rows(result["accepted"], batch.batch_id, "last_reported")
-    feature_rows = _enrich_rows(result["features"], batch.batch_id, "event_timestamp")
     observation_version = delta_upsert(observations_uri, observation_rows, options)
-    feature_version = delta_upsert(features_uri, feature_rows, options)
     quarantine_key = f"{settings.audit_prefix.rstrip('/')}/{batch.batch_id}/quarantine.json"
     return {
         "backend": "delta",
         "observations": {"uri": observations_uri, "version": observation_version},
-        "features": {"uri": features_uri, "version": feature_version},
         "quarantine_uri": put_json(settings, quarantine_key, result["quarantine"]),
     }
 
@@ -173,22 +166,6 @@ def persist_batch(settings: Settings, batch: Batch, result: dict[str, Any]) -> d
 
     atomic_parquet(
         directory / "observations.parquet", result["accepted"], list(Observation.model_fields)
-    )
-    atomic_parquet(
-        directory / "features.parquet",
-        result["features"],
-        [
-            "event_id",
-            "system_id",
-            "station_id",
-            "event_timestamp",
-            "hour_utc",
-            "day_of_week",
-            "available_bikes",
-            "available_docks",
-            "capacity",
-            "availability_ratio",
-        ],
     )
     atomic_json(directory / "quarantine.json", result["quarantine"])
 
