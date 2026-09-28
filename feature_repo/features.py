@@ -19,6 +19,7 @@ station_features = FeatureView(
     entities=[station],
     ttl=timedelta(days=2),
     schema=[
+        Field(name="feature_observed_at", dtype=Int64),
         Field(name="hour_utc", dtype=Int64),
         Field(name="day_of_week", dtype=Int64),
         Field(name="available_bikes", dtype=Int64),

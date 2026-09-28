@@ -34,7 +34,7 @@ def test_inspect_local_delta(tmp_path):
     )
     result = inspect_delta(settings)
     assert result["tables"]["observations"]["rows"] == 1
-    assert set(result["tables"]) == {"observations"}
+    assert set(result["tables"]) == {"observations", "prediction_audits"}
 
 
 def test_delta_failure_does_not_create_completion_marker(monkeypatch, tmp_path):
@@ -129,4 +129,4 @@ def test_kafka_to_minio_delta_stack(tmp_path):
     assert report["storage"]["backend"] == "delta"
     assert retry_report["storage"]["backend"] == "delta"
     assert lake["tables"]["observations"]["rows"] == 1
-    assert set(lake["tables"]) == {"observations"}
+    assert set(lake["tables"]) == {"observations", "prediction_audits"}

@@ -22,6 +22,8 @@ models:
         data_tests: [not_null]
       - name: event_timestamp
         data_tests: [not_null]
+      - name: feature_observed_at
+        data_tests: [not_null]
       - name: hour_utc
         data_tests: [not_null]
       - name: day_of_week
@@ -47,6 +49,6 @@ unit_tests:
           - {station_id: one, event_timestamp: '2026-01-01 00:45:00+00', available_bikes: 3, available_docks: 7, capacity: 10, source_name: synthetic}
     expect:
       rows:
-        - {station_id: one, event_timestamp: '2026-01-01 00:00:00+00', hour_utc: 0, day_of_week: 3, available_bikes: 5, available_docks: 5, capacity: 10, availability_ratio: 0.5, target_available_bikes_15m: 4.0, source_name: synthetic}
-        - {station_id: one, event_timestamp: '2026-01-01 00:15:00+00', hour_utc: 0, day_of_week: 3, available_bikes: 4, available_docks: 6, capacity: 10, availability_ratio: 0.4, target_available_bikes_15m: null, source_name: synthetic}
-        - {station_id: one, event_timestamp: '2026-01-01 00:45:00+00', hour_utc: 0, day_of_week: 3, available_bikes: 3, available_docks: 7, capacity: 10, availability_ratio: 0.3, target_available_bikes_15m: null, source_name: synthetic}
+        - {station_id: one, event_timestamp: '2026-01-01 00:00:00+00', feature_observed_at: 1767225600, hour_utc: 0, day_of_week: 3, available_bikes: 5, available_docks: 5, capacity: 10, availability_ratio: 0.5, target_available_bikes_15m: 4.0, source_name: synthetic}
+        - {station_id: one, event_timestamp: '2026-01-01 00:15:00+00', feature_observed_at: 1767226500, hour_utc: 0, day_of_week: 3, available_bikes: 4, available_docks: 6, capacity: 10, availability_ratio: 0.4, target_available_bikes_15m: null, source_name: synthetic}
+        - {station_id: one, event_timestamp: '2026-01-01 00:45:00+00', feature_observed_at: 1767228300, hour_utc: 0, day_of_week: 3, available_bikes: 3, available_docks: 7, capacity: 10, availability_ratio: 0.3, target_available_bikes_15m: null, source_name: synthetic}

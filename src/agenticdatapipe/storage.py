@@ -129,7 +129,10 @@ def inspect_delta(settings: Settings) -> dict[str, Any]:
     """Return table versions and row counts."""
     output: dict[str, Any] = {"backend": settings.storage_backend, "tables": {}}
     options = settings.delta_storage_options() if settings.storage_backend == "delta" else None
-    for name, location in (("observations", settings.observations_table),):
+    for name, location in (
+        ("observations", settings.observations_table),
+        ("prediction_audits", settings.prediction_audits_table),
+    ):
         uri = settings.s3_uri(location) if settings.storage_backend == "delta" else location
         try:
             table = DeltaTable(uri, storage_options=options)
@@ -141,6 +144,10 @@ def inspect_delta(settings: Settings) -> dict[str, Any]:
         except TableNotFoundError:
             output["tables"][name] = {"uri": uri, "status": "missing"}
     return output
+
+
+def delta_uri(settings: Settings, location: str) -> str:
+    return settings.s3_uri(location) if settings.storage_backend == "delta" else location
 
 
 def _persist_delta(settings: Settings, batch: Batch, result: dict[str, Any]) -> dict[str, Any]:

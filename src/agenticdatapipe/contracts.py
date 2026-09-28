@@ -1,5 +1,6 @@
 """Wire contracts and structured agent outputs."""
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -64,3 +65,38 @@ class Batch(BaseModel):
     records: list[dict[str, Any]]
     # Kafka offset ranges are inclusive; commit advances each end by one.
     offsets: dict[str, dict[str, int]] = Field(default_factory=dict)
+
+
+class PredictionAudit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    event_id: str
+    request_id: str
+    station_id: str = Field(min_length=1)
+    served_at: datetime
+    feature_observed_at: datetime
+    target_at: datetime
+    horizon_minutes: Literal[15] = 15
+    model_name: str
+    model_version: str
+    model_alias: str
+    raw_prediction: float
+    predicted_available_bikes_15m: int = Field(ge=0)
+    hour_utc: int = Field(ge=0, le=23)
+    day_of_week: int = Field(ge=0, le=6)
+    available_bikes: int = Field(ge=0)
+    available_docks: int = Field(ge=0)
+    capacity: int = Field(gt=0)
+    availability_ratio: float = Field(ge=0, le=1)
+
+
+class MonitoringReport(BaseModel):
+    status: Literal["insufficient_data", "passed", "warning", "failed"]
+    model_name: str
+    model_version: str
+    window_start: datetime
+    window_end: datetime
+    metrics: dict[str, float]
+    warnings: list[str] = Field(default_factory=list)
+    failures: list[str] = Field(default_factory=list)

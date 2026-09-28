@@ -18,6 +18,7 @@ with sequenced as (
 select
     station_id,
     event_timestamp,
+    cast(epoch(event_timestamp) as bigint) as feature_observed_at,
     cast(extract(hour from event_timestamp) as bigint) as hour_utc,
     cast(extract(isodow from event_timestamp) - 1 as bigint) as day_of_week,
     available_bikes,

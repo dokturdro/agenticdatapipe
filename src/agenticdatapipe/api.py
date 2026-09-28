@@ -5,8 +5,10 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 import mlflow
 import mlflow.sklearn
@@ -16,7 +18,9 @@ from feast import FeatureStore
 from mlflow import MlflowClient
 from pydantic import BaseModel, Field
 
+from agenticdatapipe.audit import AuditPublisher, PredictionAuditPublisher
 from agenticdatapipe.config import Settings
+from agenticdatapipe.contracts import PredictionAudit
 from agenticdatapipe.training import FEATURE_COLUMNS
 
 
@@ -25,6 +29,7 @@ class PredictionRequest(BaseModel):
 
 
 class PredictionResponse(BaseModel):
+    request_id: str
     station_id: str
     predicted_available_bikes_15m: int
     raw_prediction: float
@@ -34,6 +39,7 @@ class PredictionResponse(BaseModel):
     model_name: str
     model_version: str
     model_alias: str
+    feature_observed_at: datetime
     served_at: datetime
 
 
@@ -42,6 +48,14 @@ class HealthResponse(BaseModel):
     model_name: str
     model_version: str
     model_alias: str
+    audit_status: str
+    audit_failed_events: int
+
+
+@dataclass(frozen=True)
+class PredictionResult:
+    response: PredictionResponse
+    audit: PredictionAudit
 
 
 class StationFeaturesNotFound(LookupError):
@@ -85,7 +99,7 @@ class PredictionRuntime:
         service = store.get_feature_service(settings.feast_feature_service)
         return cls(settings, store, service, model, str(version.version))
 
-    def predict(self, station_id: str) -> PredictionResponse:
+    def predict(self, station_id: str) -> PredictionResult:
         values = self.feature_store.get_online_features(
             features=self.feature_service,
             entity_rows=[{"station_id": station_id}],
@@ -99,13 +113,22 @@ class PredictionRuntime:
             raise StationFeaturesNotFound(
                 f"No complete online feature row for station {station_id!r}"
             )
+        observed_values = values.get("feature_observed_at")
+        if not observed_values or observed_values[0] is None:
+            raise StationFeaturesNotFound(
+                f"No feature observation timestamp for station {station_id!r}"
+            )
 
         features = {name: values[name][0] for name in FEATURE_COLUMNS}
         model_input = pd.DataFrame([features], columns=FEATURE_COLUMNS)
         raw_prediction = float(self.model.predict(model_input)[0])
         capacity = int(features["capacity"])
         bounded_prediction = max(0, min(capacity, round(raw_prediction)))
-        return PredictionResponse(
+        served_at = datetime.now(UTC)
+        feature_observed_at = datetime.fromtimestamp(int(observed_values[0]), UTC)
+        request_id = uuid4().hex
+        response = PredictionResponse(
+            request_id=request_id,
             station_id=station_id,
             predicted_available_bikes_15m=bounded_prediction,
             raw_prediction=raw_prediction,
@@ -114,16 +137,34 @@ class PredictionRuntime:
             model_name=self.settings.mlflow_model_name,
             model_version=self.model_version,
             model_alias=self.settings.mlflow_model_alias,
-            served_at=datetime.now(UTC),
+            feature_observed_at=feature_observed_at,
+            served_at=served_at,
         )
+        audit = PredictionAudit(
+            event_id=request_id,
+            request_id=request_id,
+            station_id=station_id,
+            served_at=served_at,
+            feature_observed_at=feature_observed_at,
+            target_at=feature_observed_at + timedelta(minutes=15),
+            model_name=self.settings.mlflow_model_name,
+            model_version=self.model_version,
+            model_alias=self.settings.mlflow_model_alias,
+            raw_prediction=raw_prediction,
+            predicted_available_bikes_15m=bounded_prediction,
+            **features,
+        )
+        return PredictionResult(response=response, audit=audit)
 
 
 RuntimeFactory = Callable[[Settings], PredictionRuntime]
+AuditPublisherFactory = Callable[[Settings], AuditPublisher]
 
 
 def create_app(
     settings: Settings | None = None,
     runtime_factory: RuntimeFactory = PredictionRuntime.load,
+    audit_publisher_factory: AuditPublisherFactory = PredictionAuditPublisher,
 ) -> FastAPI:
     app_settings = settings or Settings()
 
@@ -135,7 +176,18 @@ def create_app(
         except Exception as exc:  # noqa: BLE001 -- expose dependency failure as readiness.
             application.state.runtime = None
             application.state.startup_error = f"{type(exc).__name__}: {exc}"
-        yield
+        try:
+            application.state.audit_publisher = audit_publisher_factory(app_settings)
+            application.state.audit_startup_error = None
+        except Exception as exc:  # noqa: BLE001 -- audit failure must not disable serving.
+            application.state.audit_publisher = None
+            application.state.audit_startup_error = f"{type(exc).__name__}: {exc}"
+        try:
+            yield
+        finally:
+            publisher = application.state.audit_publisher
+            if publisher is not None:
+                publisher.close()
 
     application = FastAPI(
         title="Bike availability prediction API",
@@ -151,11 +203,21 @@ def create_app(
                 status_code=503,
                 detail=f"Serving dependencies are unavailable: {application.state.startup_error}",
             )
+        publisher = application.state.audit_publisher
+        audit_status = (
+            "unavailable"
+            if publisher is None
+            else "degraded"
+            if publisher.failed_events
+            else "ready"
+        )
         return HealthResponse(
             status="ready",
             model_name=runtime.settings.mlflow_model_name,
             model_version=runtime.model_version,
             model_alias=runtime.settings.mlflow_model_alias,
+            audit_status=audit_status,
+            audit_failed_events=publisher.failed_events if publisher is not None else 0,
         )
 
     @application.post("/predict", response_model=PredictionResponse)
@@ -167,7 +229,14 @@ def create_app(
                 detail=f"Serving dependencies are unavailable: {application.state.startup_error}",
             )
         try:
-            return runtime.predict(request.station_id)
+            result = runtime.predict(request.station_id)
+            publisher = application.state.audit_publisher
+            if publisher is not None:
+                try:
+                    publisher.publish(result.audit)
+                except Exception as exc:  # noqa: BLE001 -- audit delivery is best-effort.
+                    application.state.audit_last_error = f"{type(exc).__name__}: {exc}"
+            return result.response
         except StationFeaturesNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except Exception as exc:

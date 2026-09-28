@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = "localhost:9092"
     kafka_topic: str = "bike.station_status.v1"
     kafka_group_id: str = "bike-pipeline-v1"
+    prediction_audit_topic: str = "bike.prediction_audit.v1"
+    prediction_audit_group_id: str = "bike-prediction-audit-v1"
     data_dir: Path = Path("data")
     batch_size: int = Field(default=1000, ge=1)
     batch_timeout_seconds: float = Field(default=30, gt=0)
@@ -33,6 +35,7 @@ class Settings(BaseSettings):
     s3_secret_access_key: str = "minioadmin"
     s3_allow_http: bool = True
     observations_table: str = "delta/station_observations"
+    prediction_audits_table: str = "delta/prediction_audits"
     raw_prefix: str = "raw/gbfs"
     audit_prefix: str = "audit/runs"
     dbt_project_dir: Path = Path("dbt")
@@ -48,6 +51,7 @@ class Settings(BaseSettings):
     feast_redis_connection: str = "localhost:6379"
     mlflow_tracking_uri: str = "http://localhost:5000"
     mlflow_experiment: str = "bike-availability-training"
+    mlflow_monitoring_experiment: str = "bike-availability-monitoring"
     mlflow_model_name: str = "bike-availability-15m"
     mlflow_model_alias: str = "champion"
     feast_feature_service: str = "bike_availability_service"
@@ -55,6 +59,12 @@ class Settings(BaseSettings):
     synthetic_history_days: int = Field(default=30, ge=7)
     synthetic_station_count: int = Field(default=8, ge=2)
     synthetic_seed: int = 42
+    monitoring_window_hours: int = Field(default=24, ge=1)
+    monitoring_label_tolerance_seconds: int = Field(default=120, ge=0)
+    monitoring_min_samples: int = Field(default=100, ge=1)
+    monitoring_min_label_coverage: float = Field(default=0.9, ge=0, le=1)
+    monitoring_psi_warning: float = Field(default=0.1, ge=0)
+    monitoring_psi_failure: float = Field(default=0.25, ge=0)
 
     def s3_uri(self, key: str) -> str:
         return f"s3://{self.s3_bucket}/{key.lstrip('/')}"

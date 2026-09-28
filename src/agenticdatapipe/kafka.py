@@ -16,12 +16,20 @@ from agenticdatapipe.storage import atomic_json
 class KafkaBatchSource:
     """One active process per consumer group (local prototype, not a distributed lock)."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        topic: str | None = None,
+        group_id: str | None = None,
+    ) -> None:
         self.settings = settings
+        self.topic = topic or settings.kafka_topic
+        self.group_id = group_id or settings.kafka_group_id
         self.consumer = Consumer(
             {
                 "bootstrap.servers": settings.kafka_bootstrap_servers,
-                "group.id": settings.kafka_group_id,
+                "group.id": self.group_id,
                 "enable.auto.commit": False,
                 "enable.auto.offset.store": False,
                 "auto.offset.reset": "earliest",
@@ -29,10 +37,10 @@ class KafkaBatchSource:
             }
         )
         identity = digest(
-            [settings.kafka_bootstrap_servers, settings.kafka_topic, settings.kafka_group_id]
+            [settings.kafka_bootstrap_servers, self.topic, self.group_id]
         )[:16]
         self.pending: Path = settings.data_dir / "pending" / f"{identity}.json"
-        self.consumer.subscribe([settings.kafka_topic])
+        self.consumer.subscribe([self.topic])
 
     def read(self) -> Batch:
         if self.pending.exists():
@@ -59,7 +67,7 @@ class KafkaBatchSource:
             partition = str(message.partition())
             offsets.setdefault(partition, {"start": message.offset(), "end": message.offset()})
             offsets[partition]["end"] = message.offset()
-        batch_id = digest([self.settings.kafka_topic, self.settings.kafka_group_id, offsets])[:24]
+        batch_id = digest([self.topic, self.group_id, offsets])[:24]
         batch = Batch(batch_id=batch_id, records=records, offsets=offsets)
         if records:
             atomic_json(self.pending, batch.model_dump())
@@ -67,7 +75,7 @@ class KafkaBatchSource:
 
     def commit(self, batch: Batch) -> None:
         offsets = [
-            TopicPartition(self.settings.kafka_topic, int(p), value["end"] + 1)
+            TopicPartition(self.topic, int(p), value["end"] + 1)
             for p, value in batch.offsets.items()
         ]
         if offsets:

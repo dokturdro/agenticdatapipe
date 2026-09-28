@@ -8,6 +8,8 @@ recognize a known bike-count alias and whether to allow a 15-minute freshness gr
 Stage 3 uses dbt and DuckDB to build and test feature history, then adds Feast feature
 materialization and an MLflow training and registry workflow.
 Stage 4 serves the approved model through FastAPI using Feast online features.
+Stage 5 records prediction audits in Delta Lake and runs hourly quality, drift, and delayed-label
+performance monitoring, with results tracked in MLflow.
 
 ```mermaid
 flowchart LR
@@ -30,10 +32,19 @@ flowchart LR
     API --> Redis
     API --> Registry
     API --> Client
+    API -->|bike.prediction_audit.v1| AuditKafka[Kafka audit topic]
+    AuditKafka --> AuditSink[Airflow audit sink]
+    AuditSink --> AuditDelta[(Prediction audits in Delta)]
+    AuditDelta --> Monitor[Airflow monitoring DAG]
+    Delta --> Monitor
+    Feast -->|training reference| Monitor
+    Registry -->|champion metrics| Monitor
+    Monitor --> Monitoring[MLflow monitoring experiment]
 ```
 
-The model predicts available bikes 15 minutes ahead. Statistical drift monitoring remains a
-later stage.
+The model predicts available bikes 15 minutes ahead. Monitoring joins each mature prediction
+to the nearest validated station observation within the configured tolerance. Delta Lake is the
+event-level source of truth; Airflow computes the checks; MLflow stores metrics and reports.
 
 ## Components
 
@@ -50,287 +61,45 @@ later stage.
 - PostgreSQL stores Airflow metadata. `LocalExecutor` keeps the local stack small.
 - Feast performs point-in-time joins from Parquet and materializes current features to Redis.
 - MLflow tracks experiments, stores artifacts in MinIO, and manages `candidate` and
-  `champion` model aliases.
-- FastAPI loads the MLflow champion and retrieves inference features from Feast/Redis.
+  `champion` model aliases. A separate experiment stores production monitoring windows.
+- FastAPI loads the MLflow champion, retrieves inference features from Feast/Redis, and emits
+  best-effort versioned prediction audits without making Kafka delivery part of response latency.
+- The prediction-audit DAG idempotently persists Kafka events to Delta before committing offsets.
+- The hourly monitoring DAG records feature and prediction PSI, input quality, label coverage,
+  MAE, RMSE, and persistence-baseline performance. Critical failures fail the Airflow task but
+  never move the `champion` alias automatically.
 
-## Local Python setup
+## Quick start
 
-Python 3.11 or newer and `uv` are required:
+Python 3.11+, `uv`, and Docker Desktop are required. Install the project and create the local
+environment file:
 
 ```powershell
 uv sync --locked --extra dbt
 Copy-Item .env.example .env
 ```
 
-Put `OPENAI_API_KEY` in `.env`. The default model is `gpt-4.1-mini` and can be changed
-with `BIKE_OPENAI_MODEL`. Do not commit `.env`.
-
-The offline fixture path remains available and requires neither Docker nor OpenAI:
-
-```powershell
-uv run bikepipe demo
-uv run pytest -q
-```
-
-It produces one valid station and quarantines one inactive station under `data/batches`.
-
-To see the policy choices change the data, use the intentionally altered snapshot:
-
-```powershell
-uv run bikepipe demo --snapshot fixtures/stations_variation.json
-```
-
-Its report shows `alias_candidates: 1` and `within_freshness_grace: 1`. The fixture planner
-enables the `bikes_available` alias and a 900-second grace period: two stations are accepted,
-one inactive station is quarantined, and both `alias_recovered_rows` and
-`grace_accepted_rows` equal 1. Canonical `num_bikes_available` always takes precedence.
-Observations older than the selected limit, future timestamps, and invalid measurements
-remain quarantined. This alias is synthetic demonstration input, not a Citi Bike feed change.
-
-For the same variation through Kafka, Airflow, OpenAI, and Delta Lake, run:
-
-```powershell
-uv run python main.py --snapshot fixtures/stations_variation.json
-```
-
-Add `--fixture` to make that full-stack run deterministic and API-free. The report records
-the profile, chosen policies, rationale, attempts, quality counts, and Delta locations.
-The model decides between predefined options; a conventional rule could make the same
-choices for this small example. The value here is the controlled integration pattern.
-
-## Run the complete pipeline with one command
-
-With Docker Desktop running and `OPENAI_API_KEY` set in `.env`, execute the complete local
-Kafka, Airflow, LangGraph, OpenAI, MinIO, and Delta path:
+Add `OPENAI_API_KEY` to `.env`, then run the complete local pipeline:
 
 ```powershell
 uv run python main.py
 ```
 
-The launcher starts the Compose services, creates an isolated Kafka topic and consumer group,
-publishes `fixtures/stations.json`, triggers the Airflow DAG, waits for completion, and prints
-the final report. It leaves the services running so their state can be inspected afterward.
-
-To exercise the same infrastructure without an OpenAI call:
+For a deterministic run without an OpenAI call:
 
 ```powershell
 uv run python main.py --fixture
 ```
 
-Use `--snapshot <path>` for another GBFS snapshot and `--timeout <seconds>` to change the
-startup and DAG execution timeout. The lower-level `bikepipe` commands remain available for
-running individual stages.
+Use `uv run python main.py --help` for launcher options. All application settings and defaults
+are listed in `.env.example`.
 
-## Start Kafka, MinIO, and Airflow
+## Quality and drift monitoring
 
-Start Docker Desktop with Linux containers, then build and start the base services:
-
-```powershell
-docker compose up --build -d
-docker compose ps
-```
-
-Airflow is at http://localhost:8080, MLflow is at http://localhost:5000, and the MinIO
-console is at http://localhost:9001.
-The Airflow user is `admin`; its generated password is stored in:
-
-```powershell
-Get-Content data/airflow/simple_auth_manager_passwords.json.generated
-```
-
-The default MinIO login is `minioadmin` / `minioadmin`. Change the corresponding values in
-`.env` if the stack is reachable outside your machine. Compose creates the `bike-lake`
-bucket automatically.
-
-The `bike_station_pipeline` DAG is enabled on a one-minute schedule. With no Kafka backlog,
-the sensor reschedules and the run ends as skipped without calling OpenAI.
-
-## Send data through the pipeline
-
-For a deterministic two-event Kafka replay from the host:
-
-```powershell
-uv run bikepipe replay fixtures/stations.json
-```
-
-Airflow detects the backlog and executes the LangGraph task with OpenAI planning. To stream
-the live Citi Bike feed continuously, start the optional producer profile:
-
-```powershell
-docker compose --profile live up --build -d bike-producer
-docker compose logs -f bike-producer
-```
-
-The producer respects the larger of the configured polling interval and the GBFS feed TTL,
-records each raw snapshot locally, uploads it to MinIO, and publishes acknowledged Kafka
-events. Stop only the live producer with:
-
-```powershell
-docker compose --profile live stop bike-producer
-```
-
-Inspect Airflow task logs in the UI or with `docker compose logs airflow-scheduler`.
-
-## Train and register the Stage 3 model
-
-The training path is intentionally separate from the ingestion launcher. Trigger its manual
-Airflow DAG after the Compose stack is healthy:
-
-```powershell
-docker compose exec airflow-scheduler airflow dags trigger bike_model_training
-```
-
-The DAG performs four bounded tasks:
-
-1. By default, it writes 30 days of explicitly synthetic, seeded, eight-station raw
-   observations at 15-minute intervals to `data/training/synthetic_observations.parquet`.
-2. It runs `dbt build` to derive and test the feature columns and exact 15-minute labels,
-   writing `data/feast/station_features_history.parquet`.
-3. It applies the definitions in `feature_repo`, materializes the latest feature values
-   into Redis, and verifies an online lookup.
-4. It retrieves point-in-time training features through Feast, uses chronological
-   70%/15%/15% train/validation/test windows, and trains a histogram gradient boosting
-   regressor.
-
-The persistence baseline predicts that the bike count in 15 minutes equals the current count.
-Every successful run is registered as `bike-availability-15m@candidate`. A version becomes
-`@champion` only when its validation MAE is strictly lower than that baseline.
-
-Follow the run in Airflow, then open MLflow at http://localhost:5000 to inspect parameters,
-metrics, the training summary, artifacts, model versions, and aliases. A compact local report
-is also written to `data/training/<mlflow-run-id>.json`.
-
-To verify Redis directly:
-
-```powershell
-docker compose exec redis redis-cli DBSIZE
-```
-
-Synthetic history is demo training input and is never written into the collected GBFS raw or
-Delta observation tables. Set `BIKE_TRAINING_SOURCE=collected` to make dbt read the validated
-Delta observations directly through DuckDB's Delta extension. Collected mode requires enough
-15-minute history to produce a usable labeled dataset; the default remains synthetic so the
-demo is reproducible immediately.
-
-## Serve predictions with FastAPI
-
-Train and promote a champion model first, then start the optional serving profile:
-
-```powershell
-docker compose --profile serving up --build -d bike-api
-curl.exe http://localhost:8000/health
-```
-
-The API loads `models:/bike-availability-15m@champion` once when it starts. Restart
-`bike-api` after promoting a new champion.
-
-Request a prediction using only a station ID. The service obtains all model inputs from the
-Feast online store:
-
-```powershell
-$body = @{ station_id = 'demo-station-001' } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri 'http://localhost:8000/predict' -ContentType 'application/json' -Body $body
-```
-
-The response includes the raw model output, a rounded prediction bounded between zero and
-station capacity, the current bike count, the 15-minute horizon, and the loaded model version.
-Interactive OpenAPI documentation is available at http://localhost:8000/docs.
-
-## Inspect MinIO and Delta Lake
-
-The host CLI defaults to local storage so `demo` stays self-contained. Temporarily select
-the Delta backend when inspecting the running stack:
-
-```powershell
-$env:BIKE_STORAGE_BACKEND = 'delta'
-uv run bikepipe verify-storage
-uv run bikepipe inspect-lake
-Remove-Item Env:BIKE_STORAGE_BACKEND
-```
-
-MinIO contains these logical locations:
-
-```text
-s3://bike-lake/raw/gbfs/                         raw source snapshots
-s3://bike-lake/delta/station_observations       validated Delta table
-s3://bike-lake/audit/runs/<batch-id>/            quarantine and report JSON
-```
-
-Each local `data/batches/<batch-id>` directory contains `observations.parquet`,
-`quarantine.json`, and `report.json`. dbt owns the separate feature-history artifact under
-`data/feast`. Reports include Kafka offset ranges, quality results, the selected plan, Delta
-versions, and object URIs.
-
-## Reliability model
-
-Processing is at-least-once. A pending manifest freezes each batch's partition/offset range.
-The Delta observation table upserts by stable `event_id`, so task retries do not duplicate rows. Raw and audit
-objects use deterministic keys. The local completion marker is written only after all MinIO
-and Delta operations succeed, and Kafka offsets are committed only after that marker exists.
-
-Airflow limits each DAG to one active run. The MinIO Delta client also uses conditional writes.
-Run only one consumer for a given group and shared `data` directory. Across-batch queries use
-`event_id` as their identity; dbt feature models use event time rather than ingestion time.
-
-## Tests
-
-Run fast tests and lint locally:
-
-```powershell
-uv run pytest -q
-uv run ruff check .
-```
-
-The Python suite mocks the dbt process boundary. To exercise the real synthetic dbt project
-locally, first generate its raw input and then run the same wrapper used by Airflow:
-
-```powershell
-uv run --extra dbt python -c "from agenticdatapipe.config import Settings; from agenticdatapipe.training import generate_synthetic_observations; from agenticdatapipe.dbt_runner import build_training_dataset; s=Settings(); generate_synthetic_observations(s); print(build_training_dataset(s))"
-```
-
-With Kafka and MinIO running, execute the opt-in ingestion stack test:
-
-```powershell
-$env:BIKE_TEST_STACK = '1'
-uv run pytest -q -m "integration and minio"
-Remove-Item Env:BIKE_TEST_STACK
-```
-
-Validate Airflow DAG imports inside its actual image:
-
-```powershell
-docker compose exec airflow-scheduler airflow dags list-import-errors
-```
-
-After triggering Stage 3, its concrete integration checks are visible in the task logs: dbt
-reports its model and test statuses, Feast returns a non-null online feature sample, and the
-training task returns the MLflow run ID, model version, metrics, and promotion decision.
-
-## Configuration
-
-All application settings use the `BIKE_` prefix and are listed in `.env.example`. Host
-defaults use `localhost`; Compose overrides Kafka, MinIO, Redis, dbt, Feast, and MLflow paths
-and endpoints with container paths and service names. `BIKE_TRAINING_SOURCE` accepts
-`synthetic` or `collected`.
-The Airflow image contains the application, while DAGs, logs, and the local recovery directory
-are mounted from the repository.
-
-## Shutdown and reset
-
-Stop containers while retaining Kafka, MinIO, and PostgreSQL volumes:
-
-```powershell
-docker compose --profile live down
-```
-
-To erase this demo's container state, use `docker compose --profile live down -v`. Remove the
-project's `data` directory separately only when you also intend to discard pending batch
-recovery state. Do not reuse a pending manifest after resetting Kafka.
-
-## Next stages
-
-1. Quality/drift monitoring.
-2. Kafka prediction audit events.
+The audit DAG persists prediction events every minute, and the monitoring DAG evaluates them
+hourly against delayed observations and the training reference. Results appear in the
+`bike-availability-monitoring` MLflow experiment. Monitoring is advisory; changing the
+registered model's `champion` alias remains a manual decision.
 
 Citi Bike discovery feed: https://gbfs.citibikenyc.com/gbfs/2.3/gbfs.json  
 GBFS reference: https://gbfs.org/documentation/reference/  
