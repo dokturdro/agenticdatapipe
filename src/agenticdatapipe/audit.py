@@ -1,5 +1,3 @@
-"""Best-effort prediction audit publishing and durable Kafka ingestion."""
-
 from __future__ import annotations
 
 import json
@@ -23,8 +21,6 @@ class AuditPublisher(Protocol):
 
 
 class PredictionAuditPublisher:
-    """Queue audit events without adding Kafka delivery latency to predictions."""
-
     def __init__(self, settings: Settings) -> None:
         self.topic = settings.prediction_audit_topic
         self.failed_events = 0
@@ -66,7 +62,7 @@ def persist_prediction_audit_batch(settings: Settings, batch: Batch) -> dict[str
     for record in batch.records:
         try:
             valid.append(PredictionAudit.model_validate(record).model_dump(mode="python"))
-        except Exception as exc:  # noqa: BLE001 -- malformed events are quarantined and committed.
+        except Exception as exc:  # noqa: BLE001
             invalid.append({"record": record, "error": f"{type(exc).__name__}: {exc}"})
 
     uri = delta_uri(settings, settings.prediction_audits_table)

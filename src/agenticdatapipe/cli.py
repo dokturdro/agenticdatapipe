@@ -1,5 +1,3 @@
-"""Command-line entry points for live ingestion and reproducible replay."""
-
 import argparse
 import json
 import time
@@ -101,7 +99,7 @@ def main() -> None:
                 client.close()
     except KeyboardInterrupt:
         pass
-    except Exception as exc:  # noqa: BLE001 -- CLI boundary reports failures with a nonzero exit.
+    except Exception as exc:  # noqa: BLE001
         parser.exit(1, f"Pipeline failed ({type(exc).__name__}): {exc}\n")
 
 

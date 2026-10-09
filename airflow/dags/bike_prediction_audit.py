@@ -1,5 +1,3 @@
-"""Persist prediction audit events before committing their Kafka offsets."""
-
 from datetime import UTC, datetime, timedelta
 
 from airflow.providers.standard.sensors.python import PythonSensor

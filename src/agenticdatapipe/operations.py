@@ -1,5 +1,3 @@
-"""Deterministic data operations exposed to the graph as LangChain tools."""
-
 from typing import Any
 
 import duckdb
@@ -12,7 +10,7 @@ from agenticdatapipe.contracts import Observation, Profile, TransformPlan
 
 @tool
 def profile_records(records: list[dict[str, Any]], stale_seconds: int) -> dict[str, Any]:
-    """Profile station events using DuckDB without executing generated SQL."""
+    """Profile station events."""
     frame = pd.DataFrame(
         [{"station_id": r.get("station_id"), "ts": r.get("source_updated_at")} for r in records]
     )
@@ -68,7 +66,7 @@ def execute_plan(
     stale_seconds: int,
     profile: dict[str, Any],
 ) -> dict[str, Any]:
-    """Apply bounded policies; preserve rejected input in quarantine."""
+    """Apply a transform plan to station events."""
     parsed = TransformPlan.model_validate(plan)
     issues = []
     if parsed.allow_bikes_available_alias and not profile["alias_candidates"]:

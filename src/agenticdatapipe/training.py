@@ -1,5 +1,3 @@
-"""Synthetic raw history, Feast materialization, and MLflow training."""
-
 from __future__ import annotations
 
 import importlib.util
@@ -36,7 +34,6 @@ TARGET_COLUMN = "target_available_bikes_15m"
 def generate_synthetic_observations(
     settings: Settings, *, end_at: datetime | None = None
 ) -> dict[str, Any]:
-    """Write raw, canonical observations for the local training demonstration."""
     end = (end_at or datetime.now(UTC)).astimezone(UTC)
     end = end.replace(minute=(end.minute // 15) * 15, second=0, microsecond=0)
     periods = settings.synthetic_history_days * 96 + 1
@@ -107,7 +104,6 @@ def _load_feature_definitions(settings: Settings) -> ModuleType:
 
 
 def apply_and_materialize_features(settings: Settings) -> dict[str, Any]:
-    """Apply Feast objects, load history into Redis, and verify an online read."""
     _configure_feast_environment(settings)
     definitions = _load_feature_definitions(settings)
     store = FeatureStore(repo_path=str(settings.feast_repo_path))
@@ -139,7 +135,6 @@ def apply_and_materialize_features(settings: Settings) -> dict[str, Any]:
 def chronological_split(
     frame: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Split complete timestamps so no station at a timestamp crosses a boundary."""
     timestamps = np.array(sorted(frame["event_timestamp"].unique()))
     if len(timestamps) < 10:
         raise ValueError("At least 10 distinct timestamps are required for training")
@@ -156,7 +151,6 @@ def chronological_split(
 
 
 def should_promote(model_mae: float, baseline_mae: float) -> bool:
-    """The candidate must strictly improve on persistence."""
     return model_mae < baseline_mae
 
 
@@ -169,7 +163,6 @@ def _registered_version(client: MlflowClient, model_name: str, run_id: str) -> s
 
 
 def train_and_register_model(settings: Settings) -> dict[str, Any]:
-    """Train through Feast historical retrieval and gate MLflow champion promotion."""
     _configure_feast_environment(settings)
     history = pd.read_parquet(settings.feast_history_path)
     entities = history.dropna(subset=[TARGET_COLUMN])[

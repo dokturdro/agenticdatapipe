@@ -1,5 +1,3 @@
-"""Hourly production quality and drift monitoring recorded in MLflow."""
-
 from datetime import UTC, datetime, timedelta
 
 from airflow.providers.standard.sensors.python import PythonSensor

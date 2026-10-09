@@ -1,5 +1,3 @@
-"""Environment-backed settings shared by CLI, graph, and tools."""
-
 from pathlib import Path
 from typing import Literal
 

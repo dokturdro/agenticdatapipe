@@ -1,5 +1,3 @@
-"""FastAPI inference service backed by Feast online features and MLflow."""
-
 from __future__ import annotations
 
 import os
@@ -59,12 +57,10 @@ class PredictionResult:
 
 
 class StationFeaturesNotFound(LookupError):
-    """Raised when Feast has no complete online row for a station."""
+    pass
 
 
 class PredictionRuntime:
-    """Immutable serving dependencies loaded once when the API starts."""
-
     def __init__(
         self,
         settings: Settings,
@@ -173,13 +169,13 @@ def create_app(
         try:
             application.state.runtime = runtime_factory(app_settings)
             application.state.startup_error = None
-        except Exception as exc:  # noqa: BLE001 -- expose dependency failure as readiness.
+        except Exception as exc:  # noqa: BLE001
             application.state.runtime = None
             application.state.startup_error = f"{type(exc).__name__}: {exc}"
         try:
             application.state.audit_publisher = audit_publisher_factory(app_settings)
             application.state.audit_startup_error = None
-        except Exception as exc:  # noqa: BLE001 -- audit failure must not disable serving.
+        except Exception as exc:  # noqa: BLE001
             application.state.audit_publisher = None
             application.state.audit_startup_error = f"{type(exc).__name__}: {exc}"
         try:
@@ -234,7 +230,7 @@ def create_app(
             if publisher is not None:
                 try:
                     publisher.publish(result.audit)
-                except Exception as exc:  # noqa: BLE001 -- audit delivery is best-effort.
+                except Exception as exc:  # noqa: BLE001
                     application.state.audit_last_error = f"{type(exc).__name__}: {exc}"
             return result.response
         except StationFeaturesNotFound as exc:

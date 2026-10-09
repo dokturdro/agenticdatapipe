@@ -1,5 +1,3 @@
-"""Run one complete local Kafka -> Airflow -> LangGraph -> Delta pipeline."""
-
 from __future__ import annotations
 
 import argparse
@@ -21,7 +19,6 @@ DAG_ID = "bike_station_pipeline"
 
 
 def compose_command(*arguments: str, environment: dict[str, str], capture: bool = False) -> str:
-    """Run Docker Compose and turn command failures into readable launcher errors."""
     try:
         result = subprocess.run(
             ["docker", "compose", *arguments],
@@ -39,7 +36,6 @@ def compose_command(*arguments: str, environment: dict[str, str], capture: bool 
 
 
 def wait_for_airflow(timeout: int) -> None:
-    """Wait until the API, scheduler, database, and DAG processor are healthy."""
     deadline = time.monotonic() + timeout
     url = "http://localhost:8080/api/v2/monitor/health"
     last_error = "Airflow has not responded"
@@ -80,7 +76,6 @@ def wait_for_result(
     timeout: int,
     environment: dict[str, str],
 ) -> Path:
-    """Wait for a successful DAG run and its final local completion marker."""
     deadline = time.monotonic() + timeout
     reports_root = Path("data/batches")
     last_state = "queued"
@@ -159,7 +154,9 @@ def run(snapshot_path: Path, timeout: int, fixture: bool) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Run the local Kafka, Airflow and LangGraph pipeline once"
+    )
     parser.add_argument(
         "--snapshot",
         type=Path,

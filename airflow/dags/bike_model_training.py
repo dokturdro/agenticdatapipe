@@ -1,5 +1,3 @@
-"""Manual Stage 3 workflow for Feast materialization and MLflow training."""
-
 from datetime import UTC, datetime, timedelta
 
 from airflow.sdk import dag, task

@@ -1,5 +1,3 @@
-"""Bounded consumption; a pending manifest freezes batch membership across retries."""
-
 import json
 import time
 from pathlib import Path
@@ -14,8 +12,6 @@ from agenticdatapipe.storage import atomic_json
 
 
 class KafkaBatchSource:
-    """One active process per consumer group (local prototype, not a distributed lock)."""
-
     def __init__(
         self,
         settings: Settings,

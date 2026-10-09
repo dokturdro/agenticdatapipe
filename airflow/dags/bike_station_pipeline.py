@@ -1,5 +1,3 @@
-"""Reliable outer scheduling for the stateful LangGraph station pipeline."""
-
 from datetime import UTC, datetime, timedelta
 
 from airflow.providers.standard.sensors.python import PythonSensor

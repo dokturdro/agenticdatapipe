@@ -1,5 +1,3 @@
-"""Recoverable local artifacts and optional MinIO-backed Delta Lake storage."""
-
 import json
 import os
 from datetime import UTC, datetime
@@ -46,7 +44,6 @@ def s3_client(settings: Settings) -> BaseClient:
 
 
 def verify_object_store(settings: Settings) -> dict[str, Any]:
-    """Check the configured bucket and return a secret-free status payload."""
     s3_client(settings).head_bucket(Bucket=settings.s3_bucket)
     return {"endpoint": settings.s3_endpoint, "bucket": settings.s3_bucket, "status": "ok"}
 
@@ -63,7 +60,6 @@ def put_json(settings: Settings, key: str, value: Any) -> str:
 
 
 def upload_snapshot(settings: Settings, snapshot: dict[str, Any]) -> str | None:
-    """Upload a raw source snapshot when the Delta backend is enabled."""
     if settings.storage_backend != "delta":
         return None
     ingested_at = int(snapshot["ingested_at"])
@@ -98,7 +94,6 @@ def delta_upsert(
     rows: list[dict[str, Any]],
     storage_options: dict[str, str] | None = None,
 ) -> int | None:
-    """Create or idempotently upsert a Delta table by event_id."""
     if not rows:
         try:
             return DeltaTable(table_uri, storage_options=storage_options).version()
@@ -126,7 +121,6 @@ def delta_upsert(
 
 
 def inspect_delta(settings: Settings) -> dict[str, Any]:
-    """Return table versions and row counts."""
     output: dict[str, Any] = {"backend": settings.storage_backend, "tables": {}}
     options = settings.delta_storage_options() if settings.storage_backend == "delta" else None
     for name, location in (
@@ -164,7 +158,6 @@ def _persist_delta(settings: Settings, batch: Batch, result: dict[str, Any]) -> 
 
 
 def persist_batch(settings: Settings, batch: Batch, result: dict[str, Any]) -> dict[str, Any]:
-    """Persist every output; report.json is the final local completion marker."""
     directory = settings.data_dir / "batches" / batch.batch_id
     directory.mkdir(parents=True, exist_ok=True)
     marker = directory / "report.json"
@@ -196,6 +189,6 @@ def persist_batch(settings: Settings, batch: Batch, result: dict[str, Any]) -> d
         report["storage"]["report_uri"] = settings.s3_uri(report_key)
         put_json(settings, report_key, report)
 
-    # Kafka offsets may advance only after this marker exists.
+    # offsets are committed only after this marker exists
     atomic_json(marker, report)
     return report

@@ -1,5 +1,3 @@
-"""Small callables used by Airflow without coupling the core package to Airflow."""
-
 from typing import Any
 
 from confluent_kafka import Consumer, KafkaException, TopicPartition
@@ -9,11 +7,6 @@ from agenticdatapipe.config import Settings
 
 
 def _kafka_has_backlog(topic_name: str, group_id: str) -> bool:
-    """Return whether the pipeline consumer group has unprocessed topic offsets.
-
-    This performs metadata and offset queries only. It does not consume a message or
-    mutate the pipeline consumer group's offsets.
-    """
     settings = Settings()
     consumer = Consumer(
         {
@@ -68,19 +61,17 @@ def monitoring_is_ready() -> bool:
         MlflowClient(tracking_uri=settings.mlflow_tracking_uri).get_model_version_by_alias(
             settings.mlflow_model_name, settings.mlflow_model_alias
         )
-    except Exception:  # noqa: BLE001 -- readiness treats missing dependencies as not ready.
+    except Exception:  # noqa: BLE001
         return False
     return True
 
 
 def process_station_batch() -> dict[str, Any]:
-    """Run one bounded LangGraph batch for an Airflow task."""
     settings = Settings()
     return run_batch(settings, fixture=settings.fixture_mode)
 
 
 def prepare_training_history() -> dict[str, Any]:
-    """Generate raw synthetic input when the configured training source needs it."""
     from agenticdatapipe.training import generate_synthetic_observations
 
     settings = Settings()
@@ -90,21 +81,18 @@ def prepare_training_history() -> dict[str, Any]:
 
 
 def build_training_features() -> dict[str, Any]:
-    """Build and test feature history with dbt."""
     from agenticdatapipe.dbt_runner import build_training_dataset
 
     return build_training_dataset(Settings())
 
 
 def materialize_training_features() -> dict[str, Any]:
-    """Apply the Feast repository and populate its Redis online store."""
     from agenticdatapipe.training import apply_and_materialize_features
 
     return apply_and_materialize_features(Settings())
 
 
 def train_registered_model() -> dict[str, Any]:
-    """Train, register, and conditionally promote the availability model."""
     from agenticdatapipe.training import train_and_register_model
 
     return train_and_register_model(Settings())

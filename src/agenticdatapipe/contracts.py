@@ -1,5 +1,3 @@
-"""Wire contracts and structured agent outputs."""
-
 from datetime import datetime
 from typing import Any, Literal
 
@@ -63,7 +61,7 @@ class QualityReport(BaseModel):
 class Batch(BaseModel):
     batch_id: str
     records: list[dict[str, Any]]
-    # Kafka offset ranges are inclusive; commit advances each end by one.
+    # inclusive; commit uses end + 1
     offsets: dict[str, dict[str, int]] = Field(default_factory=dict)
 
 

@@ -1,5 +1,3 @@
-"""Specialized stateful nodes with bounded plan repair."""
-
 import json
 from itertools import pairwise
 from typing import Any, TypedDict
@@ -24,8 +22,6 @@ class PipelineState(TypedDict, total=False):
 
 
 def build_graph(settings: Settings, fixture: bool = False, planner_override: Any = None):
-    """Compile the graph. Overrides are for deterministic failure-path testing."""
-
     def scout(state: PipelineState) -> dict[str, Any]:
         Batch.model_validate(state["batch"])
         return {"attempts": 0}

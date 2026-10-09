@@ -1,5 +1,3 @@
-"""GBFS snapshots, recording, and acknowledged Kafka publishing."""
-
 import hashlib
 import json
 import time
@@ -37,7 +35,7 @@ class GBFSClient:
         response.raise_for_status()
         payload = response.json()
         if payload.get("version") != "2.3":
-            raise ValueError("Stage one supports GBFS 2.3 only")
+            raise ValueError("Only GBFS 2.3 is supported")
         return payload
 
     def snapshot(self) -> dict[str, Any]:
@@ -63,7 +61,6 @@ class GBFSClient:
 
 
 def snapshot_events(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
-    """Preserve bad source values for the guardian rather than silently dropping them."""
     metadata = {
         str(s["station_id"]): s for s in snapshot["station_information"]["data"]["stations"]
     }
@@ -80,7 +77,7 @@ def snapshot_events(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             "status": station,
             "metadata": metadata.get(station_id, {}),
         }
-        # Stable across retries/replay; ingestion time is intentionally excluded.
+        # ingested_at excluded so replays produce the same id
         event["event_id"] = digest({k: v for k, v in event.items() if k != "ingested_at"})
         events.append(event)
     return events

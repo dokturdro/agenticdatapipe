@@ -1,5 +1,3 @@
-"""Batch quality, drift, and delayed-label performance monitoring."""
-
 from __future__ import annotations
 
 import json
@@ -27,7 +25,6 @@ def population_stability_index(
     *,
     bins: int = 10,
 ) -> float:
-    """Compute PSI using reference quantiles and stable handling for constant inputs."""
     reference_values = np.asarray(reference, dtype=float)
     current_values = np.asarray(current, dtype=float)
     reference_values = reference_values[np.isfinite(reference_values)]
@@ -55,7 +52,6 @@ def join_predictions_to_actuals(
     *,
     tolerance_seconds: int,
 ) -> pd.DataFrame:
-    """Attach the nearest validated observation to each prediction target time."""
     joined_parts: list[pd.DataFrame] = []
     audits = audits.copy()
     audits["target_at"] = pd.to_datetime(audits["target_at"], utc=True)
@@ -226,7 +222,6 @@ def _read_delta(settings: Settings, location: str) -> pd.DataFrame:
 
 
 def run_monitoring(settings: Settings, *, now: datetime | None = None) -> dict[str, Any]:
-    """Evaluate one rolling window and record the result in MLflow."""
     window_end = (now or datetime.now(UTC)).astimezone(UTC)
     window_start = window_end - timedelta(hours=settings.monitoring_window_hours)
     audits = _read_delta(settings, settings.prediction_audits_table)

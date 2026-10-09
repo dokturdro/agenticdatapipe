@@ -1,5 +1,3 @@
-"""Run the repository's dbt project as a bounded Airflow task."""
-
 from __future__ import annotations
 
 import json
@@ -29,7 +27,6 @@ def _dbt_executable(environment: dict[str, str]) -> str:
 
 
 def build_training_dataset(settings: Settings) -> dict[str, Any]:
-    """Build and test the Feast history artifact, failing before downstream tasks."""
     settings.dbt_path.parent.mkdir(parents=True, exist_ok=True)
     settings.dbt_target_path.mkdir(parents=True, exist_ok=True)
     settings.dbt_log_path.mkdir(parents=True, exist_ok=True)

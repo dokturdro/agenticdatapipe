@@ -1,5 +1,3 @@
-"""Feast feature definitions shared by training and the later serving stage."""
-
 import os
 from datetime import timedelta
 
